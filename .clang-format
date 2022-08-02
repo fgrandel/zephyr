@@ -77,6 +77,7 @@ IndentCaseLabels: false
 IndentWidth: 8
 # SpaceBeforeParens: ControlStatementsExceptControlMacros # clang-format >= 13.0
 UseTab: Always
+SortIncludes: false
 WhitespaceSensitiveMacros:
   - STRINGIFY
   - Z_STRINGIFY
