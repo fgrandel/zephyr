@@ -457,56 +457,6 @@ static inline int parse_mac_command(uint8_t *start, uint8_t remaining_length,
 	return progress;
 }
 
-bool ieee802154_parse_mac_payload(struct ieee802154_mpdu *mpdu)
-{
-	int frame_version = mpdu->mhr.frame_control.frame_version;
-	int frame_type = mpdu->mhr.frame_control.frame_type;
-	uint8_t remaining_length = mpdu->mac_payload_length;
-	uint8_t *cursor = mpdu->mac_payload;
-	int progress = 0;
-
-	if (frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
-		progress = parse_mac_command(cursor, remaining_length, mpdu);
-		if (!advance_cursor(progress, &cursor, &remaining_length)) {
-			return false;
-		}
-
-		if (frame_version < IEEE802154_VERSION_802154 && remaining_length) {
-			return false;
-		}
-	} else if (frame_type == IEEE802154_FRAME_TYPE_DATA ||
-		   frame_version == IEEE802154_VERSION_802154) {
-		/* A data frame always embeds a payload, other generic
-		 * enhanced frames may or may not embed a payload.
-		 */
-		if (frame_type == IEEE802154_FRAME_TYPE_DATA && !remaining_length) {
-			return false;
-		}
-	} else if (frame_type == IEEE802154_FRAME_TYPE_BEACON) {
-		progress = parse_beacon(cursor, remaining_length, mpdu);
-		if (!advance_cursor(progress, &cursor, &remaining_length)) {
-			return false;
-		}
-	} else if (frame_type == IEEE802154_FRAME_TYPE_ACK) {
-		/** An Imm-ACK frame has no payload */
-		if (remaining_length) {
-			return false;
-		}
-	} else {
-		return false;
-	}
-
-	mpdu->frame_payload_length = remaining_length;
-
-	if (remaining_length) {
-		mpdu->frame_payload = cursor;
-	} else {
-		mpdu->frame_payload = NULL;
-	}
-
-	return true;
-}
-
 bool ieee802154_parse_mhr(struct net_pkt *pkt, struct ieee802154_mpdu *mpdu)
 {
 	struct ieee802154_frame_control *frame_control;
@@ -564,6 +514,57 @@ bool ieee802154_parse_mhr(struct net_pkt *pkt, struct ieee802154_mpdu *mpdu)
 
 	NET_DBG("Header size: %u, MAC payload size (including payload IEs) %u",
 		(size_t)(cursor - start), remaining_length);
+
+	return true;
+}
+
+bool ieee802154_parse_mac_payload(struct ieee802154_mpdu *mpdu)
+{
+	int frame_version = mpdu->mhr.frame_control.frame_version;
+	int frame_type = mpdu->mhr.frame_control.frame_type;
+	uint8_t remaining_length = mpdu->mac_payload_length;
+	uint8_t *cursor = mpdu->mac_payload;
+	int progress = 0;
+
+	if (frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
+		progress = parse_mac_command(cursor, remaining_length, mpdu);
+		if (!advance_cursor(progress, &cursor, &remaining_length)) {
+			return false;
+		}
+
+		if (frame_version < IEEE802154_VERSION_802154 && remaining_length) {
+			/* old style command frames may not have extra payload */
+			return false;
+		}
+	} else if (frame_type == IEEE802154_FRAME_TYPE_DATA ||
+		   frame_version == IEEE802154_VERSION_802154) {
+		/* A data frame always embeds a payload, other generic
+		 * enhanced frames may or may not embed a payload.
+		 */
+		if (frame_type == IEEE802154_FRAME_TYPE_DATA && !remaining_length) {
+			return false;
+		}
+	} else if (frame_type == IEEE802154_FRAME_TYPE_BEACON) {
+		progress = parse_beacon(cursor, remaining_length, mpdu);
+		if (!advance_cursor(progress, &cursor, &remaining_length)) {
+			return false;
+		}
+	} else if (frame_type == IEEE802154_FRAME_TYPE_ACK) {
+		/** An Imm-ACK frame has no payload */
+		if (remaining_length) {
+			return false;
+		}
+	} else {
+		return false;
+	}
+
+	mpdu->frame_payload_length = remaining_length;
+
+	if (remaining_length) {
+		mpdu->frame_payload = cursor;
+	} else {
+		mpdu->frame_payload = NULL;
+	}
 
 	return true;
 }
