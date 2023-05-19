@@ -531,9 +531,21 @@ int ieee802154_get_data_frame_params(struct ieee802154_context *ctx, struct net_
 				     struct ieee802154_frame_params *params, uint8_t *ll_hdr_len,
 				     uint8_t *authtag_len);
 
-bool ieee802154_create_data_frame(struct ieee802154_context *ctx,
-				  struct ieee802154_frame_params *params, struct net_buf *buf,
-				  uint8_t ll_hdr_len, uint8_t authtag_len);
+/**
+ * Writes the MHR (including the auxiliary security header) to an
+ * IEEE 802.15.4 frame based on the given parameters and
+ * authenticates/encrypts the frame.
+ *
+ * This implements the outgoing security procedure as specified in
+ * section 9.2.2.
+ *
+ * TODO: The implementation of the outgoing security procedure is
+ * incomplete. The security stack must not be marked stable unless
+ * this procedure has been fully implemented.
+ */
+bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame_type,
+				       struct ieee802154_frame_params *params, struct net_buf *buf,
+				       uint8_t ll_hdr_len, uint8_t authtag_len);
 
 #ifdef CONFIG_NET_L2_IEEE802154_MGMT
 /**

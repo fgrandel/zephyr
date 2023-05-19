@@ -609,8 +609,9 @@ static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 		__ASSERT_NO_MSG(authtag_len <= net_buf_tailroom(frame_buf));
 		net_buf_add(frame_buf, authtag_len);
 
-		if (!(send_raw || ieee802154_create_data_frame(ctx, &params, frame_buf, ll_hdr_len,
-							       authtag_len))) {
+		if (!(send_raw ||
+		      ieee802154_write_mhr_and_security(ctx, IEEE802154_FRAME_TYPE_DATA, &params,
+							frame_buf, ll_hdr_len, authtag_len))) {
 			return -EINVAL;
 		}
 
