@@ -548,6 +548,23 @@ int ieee802154_get_data_frame_params(struct ieee802154_context *ctx, struct net_
 				     struct ieee802154_frame_params *params, uint8_t *ll_hdr_len,
 				     uint8_t *authtag_len);
 
+#ifdef CONFIG_NET_L2_IEEE802154_SECURITY
+/**
+ * Authenticates and deciphers a frame after it has been admitted for
+ * further processing (i.e. after filtering it).
+ *
+ * This implements the incoming security procedure with and without
+ * security enabled as specified in sections 9.2.4 and 9.2.5.
+ *
+ * TODO: The implementation is incomplete. The security stack must not
+ * be marked stable unless this procedure has been fully implemented.
+ */
+bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt *pkt,
+					    struct ieee802154_mpdu *mpdu);
+#else
+#define ieee802154_incoming_security_procedure(...) true
+#endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
+
 /**
  * Writes the MHR (including the auxiliary security header) to an
  * IEEE 802.15.4 frame based on the given parameters and
@@ -577,22 +594,5 @@ struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee8
  * Create an IEEE 802.15.4-2006 immediate ACK frame.
  */
 struct net_pkt *ieee802154_create_imm_ack_frame(struct net_if *iface, uint8_t seq);
-
-#ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-/**
- * Authenticates and deciphers a frame after it has been admitted for
- * further processing (i.e. after filtering it).
- *
- * This implements the incoming security procedure with and without
- * security enabled as specified in sections 9.2.4 and 9.2.5.
- *
- * TODO: The implementation is incomplete. The security stack must not
- * be marked stable unless this procedure has been fully implemented.
- */
-bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt *pkt,
-					    struct ieee802154_mpdu *mpdu);
-#else
-#define ieee802154_incoming_security_procedure(...) true
-#endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
 
 #endif /* __IEEE802154_FRAME_H__ */

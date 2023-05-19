@@ -1175,6 +1175,116 @@ static int outgoing_security_procedure(uint8_t *cursor, struct ieee802154_securi
 
 	return progress;
 }
+
+bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt *pkt,
+					    struct ieee802154_mpdu *mpdu)
+{
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_mhr *mhr = &mpdu->mhr;
+	struct ieee802154_address *src_addr;
+	uint8_t ll_hdr_len, authtag_len, level;
+	uint32_t frame_counter;
+	bool ret = false;
+
+	if (!mhr->frame_control.security_enabled) {
+		/* Section 9.2.5: Incoming frame security procedure, Security Enabled field is set
+		 * to zero
+		 *
+		 * [...]
+		 *
+		 * a) Check for macSecurityEnabled. If macSecurityEnabled is set to FALSE, the
+		 *    procedure shall [...] return with a Status of SUCCESS.
+		 *
+		 * TODO: b)-f) implement - currently we accept all frames that are not secured.
+		 * The security feature MUST NOT be marked STABLE unless conditions b)-f) are
+		 * properly implemented.
+		 */
+		ret = true;
+		goto out;
+	}
+
+	/* Section 9.2.4: Incoming frame security procedure, Security Enabled field is set to one
+	 *
+	 * [...]
+	 *
+	 * a) Legacy security. If the Frame Version field of the frame to be unsecured is set to
+	 *    zero, the procedure shall return with a Status of UNSUPPORTED_LEGACY.
+	 */
+	if (mhr->frame_control.frame_version == IEEE802154_VERSION_802154_2003) {
+		NET_DBG("Incoming security procedure failed: Unsupported legacy.");
+		goto out;
+	}
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+
+	level = ctx->sec_ctx.level;
+
+	/* b) Check for macSecurityEnabled. If macSecurityEnabled is set to FALSE, the procedure
+	 * shall return with a Status of UNSUPPORTED_SECURITY.
+	 */
+	if (level == IEEE802154_SECURITY_LEVEL_NONE) {
+		NET_DBG("Incoming security procedure failed: Unsupported security.");
+		goto release_ctx;
+	}
+
+	if (level == IEEE802154_SECURITY_LEVEL_RESERVED) {
+		NET_DBG("Encryption-only security is deprecated since IEEE 802.15.4-2015.");
+		goto release_ctx;
+	}
+
+	/* c) Parse Auxiliary Security Header field. The procedure shall set SecurityLevel [...]
+	 *    to the Security Level field [...] of the frame to be unsecured. [...] If the resulting
+	 *    SecurityLevel is zero, the procedure shall return with a Status of
+	 *    UNSUPPORTED_SECURITY.
+	 *
+	 * TODO: d)-h) implement - currently we have a single key and a single frame counter for all
+	 * devices. The security feature MUST NOT be marked STABLE unless conditions d)-h) are
+	 * properly implemented.
+	 */
+	if (!mhr->aux_sec || mhr->aux_sec->control.security_level != level) {
+		NET_DBG("Incoming security procedure failed: Unsupported security.");
+		goto release_ctx;
+	}
+
+	/* i) Unsecure frame. [...] If the inverse transformation process fails, the procedure shall
+	 * return with a Status of SECURITY_ERROR.
+	 *
+	 * TODO: Implement private/open payload field distinction.
+	 */
+	if (level > IEEE802154_SECURITY_LEVEL_ENC) {
+		level -= 4U;
+	}
+
+	authtag_len = level_2_authtag_len[level];
+	ll_hdr_len = (uint8_t *)mpdu->mac_payload - net_pkt_data(pkt);
+	src_addr = mhr->frame_control.has_src_pan ? &mhr->src_addr->plain.addr
+						  : &mhr->src_addr->comp.addr;
+	mpdu->mac_payload_length -= authtag_len;
+
+	frame_counter = sys_le32_to_cpu(mhr->aux_sec->frame_counter);
+	if (!ieee802154_decrypt_auth(&ctx->sec_ctx, mhr->frame_control.frame_type,
+				     net_pkt_data(pkt), ll_hdr_len, mpdu->mac_payload_length,
+				     authtag_len, ctx->pan_id, src_addr,
+				     mhr->frame_control.src_addr_mode, frame_counter)) {
+		NET_DBG("Incoming security procedure failed: Security error.");
+		goto release_ctx;
+	}
+
+	/* TODO: j)-o) implement - currently we have no specific IE security and no device/key
+	 * specific security level. The security feature MUST NOT be marked STABLE unless conditions
+	 * j)-o) are properly implemented.
+	 */
+
+	/* We remove tag size from buf's length, it is now useless. */
+	pkt->buffer->len -= authtag_len;
+
+	ret = true;
+
+release_ctx:
+	k_sem_give(&ctx->ctx_lock);
+out:
+	return ret;
+}
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
 
 bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame_type,
@@ -1578,115 +1688,4 @@ release_pkt:
 	net_pkt_unref(pkt);
 	return NULL;
 }
-
-#ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt *pkt,
-					    struct ieee802154_mpdu *mpdu)
-{
-	struct ieee802154_context *ctx = net_if_l2_data(iface);
-	struct ieee802154_mhr *mhr = &mpdu->mhr;
-	uint8_t ll_hdr_len, authtag_len, level;
 	struct ieee802154_address *src_addr;
-	uint32_t frame_counter;
-	bool ret = false;
-
-	if (!mhr->frame_control.security_enabled) {
-		/* Section 9.2.5: Incoming frame security procedure, Security Enabled field is set
-		 * to zero
-		 *
-		 * [...]
-		 *
-		 * a) Check for macSecurityEnabled. If macSecurityEnabled is set to FALSE, the
-		 *    procedure shall [...] return with a Status of SUCCESS.
-		 *
-		 * TODO: b)-f) implement - currently we accept all frames that are not secured.
-		 * The security feature MUST NOT be marked STABLE unless conditions b)-f) are
-		 * properly implemented.
-		 */
-		ret = true;
-		goto out;
-	}
-
-	/* Section 9.2.4: Incoming frame security procedure, Security Enabled field is set to one
-	 *
-	 * [...]
-	 *
-	 * a) Legacy security. If the Frame Version field of the frame to be unsecured is set to
-	 *    zero, the procedure shall return with a Status of UNSUPPORTED_LEGACY.
-	 */
-	if (mhr->frame_control.frame_version == IEEE802154_VERSION_802154_2003) {
-		NET_DBG("Incoming security procedure failed: Unsupported legacy.");
-		goto out;
-	}
-
-	k_sem_take(&ctx->ctx_lock, K_FOREVER);
-
-	level = ctx->sec_ctx.level;
-
-	/* b) Check for macSecurityEnabled. If macSecurityEnabled is set to FALSE, the procedure
-	 * shall return with a Status of UNSUPPORTED_SECURITY.
-	 */
-	if (level == IEEE802154_SECURITY_LEVEL_NONE) {
-		NET_DBG("Incoming security procedure failed: Unsupported security.");
-		goto release_ctx;
-	}
-
-	if (level == IEEE802154_SECURITY_LEVEL_RESERVED) {
-		NET_DBG("Encryption-only security is deprecated since IEEE 802.15.4-2015.");
-		goto release_ctx;
-	}
-
-	/* c) Parse Auxiliary Security Header field. The procedure shall set SecurityLevel [...]
-	 *    to the Security Level field [...] of the frame to be unsecured. [...] If the resulting
-	 *    SecurityLevel is zero, the procedure shall return with a Status of
-	 *    UNSUPPORTED_SECURITY.
-	 *
-	 * TODO: d)-h) implement - currently we have a single key and a single frame counter for all
-	 * devices. The security feature MUST NOT be marked STABLE unless conditions d)-h) are
-	 * properly implemented.
-	 */
-	if (!mhr->aux_sec || mhr->aux_sec->control.security_level != level) {
-		NET_DBG("Incoming security procedure failed: Unsupported security.");
-		goto release_ctx;
-	}
-
-	/* i) Unsecure frame. [...] If the inverse transformation process fails, the procedure shall
-	 * return with a Status of SECURITY_ERROR.
-	 *
-	 * TODO: Implement private/open payload field distinction.
-	 */
-	if (level > IEEE802154_SECURITY_LEVEL_ENC) {
-		level -= 4U;
-	}
-
-	authtag_len = level_2_authtag_len[level];
-	ll_hdr_len = (uint8_t *)mpdu->mac_payload - net_pkt_data(pkt);
-	src_addr = mhr->frame_control.has_src_pan ? &mhr->src_addr->plain.addr
-						  : &mhr->src_addr->comp.addr;
-	mpdu->mac_payload_length -= authtag_len;
-
-	frame_counter = sys_le32_to_cpu(mhr->aux_sec->frame_counter);
-	if (!ieee802154_decrypt_auth(&ctx->sec_ctx, mhr->frame_control.frame_type,
-				     net_pkt_data(pkt), ll_hdr_len, mpdu->mac_payload_length,
-				     authtag_len, ctx->pan_id, src_addr,
-				     mhr->frame_control.src_addr_mode, frame_counter)) {
-		NET_DBG("Incoming security procedure failed: Security error.");
-		goto release_ctx;
-	}
-
-	/* TODO: j)-o) implement - currently we have no specific IE security and no device/key
-	 * specific security level. The security feature MUST NOT be marked STABLE unless conditions
-	 * j)-o) are properly implemented.
-	 */
-
-	/* We remove tag size from buf's length, it is now useless. */
-	pkt->buffer->len -= authtag_len;
-
-	ret = true;
-
-release_ctx:
-	k_sem_give(&ctx->ctx_lock);
-out:
-	return ret;
-}
-#endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
