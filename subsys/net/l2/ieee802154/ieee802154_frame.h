@@ -519,6 +519,16 @@ struct ieee802154_frame_params {
 bool ieee802154_parse_mhr(struct net_pkt *pkt, struct ieee802154_mpdu *mpdu);
 
 /**
+ * Filter the packet based on header data. Should be done early on before
+ * dedicating considerable resources to the packet (e.g. by decrypting it).
+ *
+ * This method must be called before admitting a frame into the stack even if
+ * hardware filtering is active as it implements additional filtering that
+ * cannot be done in hardware.
+ */
+bool ieee802154_filter(struct net_if *iface, struct ieee802154_mhr *mhr);
+
+/**
  * Parse the MAC payload after it has been authenticated and/or decrypted.
  */
 bool ieee802154_parse_mac_payload(struct ieee802154_mpdu *mpdu);
