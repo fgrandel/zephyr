@@ -608,14 +608,8 @@ static bool test_wait_for_ack(struct ieee802154_pkt_test *t)
 		goto release_tx_pkt;
 	}
 
-	one_ack_pkt = net_pkt_rx_alloc_with_buffer(net_iface, IEEE802154_IMM_ACK_PKT_LENGTH,
-						   AF_UNSPEC, 0, K_FOREVER);
+	one_ack_pkt = ieee802154_create_imm_ack_frame(net_iface, mpdu.mhr.sequence);
 	if (!one_ack_pkt) {
-		NET_ERR("*** Could not allocate ack pkt.\n");
-		goto release_tx_pkt;
-	}
-
-	if (!ieee802154_create_imm_ack_frame(net_iface, one_ack_pkt, mpdu.mhr.sequence)) {
 		NET_ERR("*** Could not create ack frame.\n");
 		goto release_tx_pkt;
 	}

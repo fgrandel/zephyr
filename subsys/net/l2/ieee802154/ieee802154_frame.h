@@ -547,7 +547,7 @@ struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee8
 /**
  * Create an IEEE 802.15.4-2006 immediate ACK frame.
  */
-bool ieee802154_create_imm_ack_frame(struct net_if *iface, struct net_pkt *pkt, uint8_t seq);
+struct net_pkt *ieee802154_create_imm_ack_frame(struct net_if *iface, uint8_t seq);
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
 /**

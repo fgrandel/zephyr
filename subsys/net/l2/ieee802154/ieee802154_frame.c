@@ -1333,13 +1333,21 @@ out:
 }
 #endif /* #ifdef CONFIG_NET_L2_IEEE802154_MGMT */
 
-bool ieee802154_create_imm_ack_frame(struct net_if *iface, struct net_pkt *pkt, uint8_t seq)
+struct net_pkt *ieee802154_create_imm_ack_frame(struct net_if *iface, uint8_t seq)
 {
-	uint8_t *p_buf = net_pkt_data(pkt);
+	uint8_t *p_buf;
 	struct ieee802154_fcf *fcf;
+	struct net_pkt *pkt;
 
+	pkt = net_pkt_alloc_with_buffer(iface, IEEE802154_IMM_ACK_PKT_LENGTH, AF_UNSPEC, 0,
+					BUF_TIMEOUT);
+	if (!pkt) {
+		return NULL;
+	}
+
+	p_buf = net_pkt_data(pkt);
 	if (!p_buf) {
-		return false;
+		goto release_pkt;
 	}
 
 	fcf = (struct ieee802154_fcf *)p_buf;
@@ -1349,12 +1357,16 @@ bool ieee802154_create_imm_ack_frame(struct net_if *iface, struct net_pkt *pkt, 
 	fcf->src_addr_mode = IEEE802154_ADDR_MODE_NONE;
 
 	if (generate_fcf_and_seq(&p_buf, IEEE802154_FRAME_TYPE_ACK, &seq, NULL) != 0) {
-		return false;
+		goto release_pkt;
 	}
 
 	net_buf_add(pkt->buffer, IEEE802154_IMM_ACK_PKT_LENGTH);
 
-	return true;
+	return pkt;
+
+release_pkt:
+	net_pkt_unref(pkt);
+	return NULL;
 }
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY

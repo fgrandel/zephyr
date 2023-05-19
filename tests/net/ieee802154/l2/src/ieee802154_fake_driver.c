@@ -85,17 +85,10 @@ static int fake_tx(const struct device *dev,
 
 		struct net_pkt *ack_pkt;
 
-		ack_pkt = net_pkt_rx_alloc_with_buffer(iface, IEEE802154_IMM_ACK_PKT_LENGTH,
-						       AF_UNSPEC, 0, K_FOREVER);
+		ack_pkt = ieee802154_create_imm_ack_frame(iface, ctx->ack_seq);
 		if (!ack_pkt) {
 			NET_ERR("*** Could not allocate ack pkt.\n");
 			return -ENOMEM;
-		}
-
-		if (!ieee802154_create_imm_ack_frame(iface, ack_pkt, ctx->ack_seq)) {
-			NET_ERR("*** Could not create ack frame.\n");
-			net_pkt_unref(ack_pkt);
-			return -EFAULT;
 		}
 
 		ieee802154_handle_ack(iface, ack_pkt);

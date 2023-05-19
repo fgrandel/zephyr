@@ -80,20 +80,12 @@ static inline void ieee802154_acknowledge(struct net_if *iface, struct ieee80215
 		return;
 	}
 
-	pkt = net_pkt_alloc_with_buffer(iface, IEEE802154_IMM_ACK_PKT_LENGTH, AF_UNSPEC, 0,
-					BUF_TIMEOUT);
-	if (!pkt) {
-		return;
-	}
-
-	if (ieee802154_create_imm_ack_frame(iface, pkt, mpdu->mhr.sequence)) {
+	pkt = ieee802154_create_imm_ack_frame(iface, mpdu->mhr.sequence);
+	if (pkt) {
 		/* ACK frames must not use the CSMA/CA procedure, see section 6.2.5.1. */
 		ieee802154_radio_tx(iface, IEEE802154_TX_MODE_DIRECT, pkt, pkt->buffer);
+		net_pkt_unref(pkt);
 	}
-
-	net_pkt_unref(pkt);
-
-	return;
 }
 
 inline bool ieee802154_prepare_for_ack(struct net_if *iface, struct net_buf *frag)
