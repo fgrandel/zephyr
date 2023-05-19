@@ -814,15 +814,17 @@ static inline void initialize_generic_frame_fcf(struct ieee802154_context *ctx, 
 						struct ieee802154_fcf *fcf)
 {
 	bool is_broadcast;
+	bool is_enh_ack;
 
 	/* We support version 2006 only for now */
 	fcf->frame_version = IEEE802154_VERSION_802154_2006;
 
 	is_broadcast = params->dst.len == IEEE802154_SHORT_ADDR_LENGTH &&
 		       params->dst.short_addr == IEEE802154_BROADCAST_ADDRESS;
+	is_enh_ack = frame_type == IEEE802154_FRAME_TYPE_ACK;
 
 	/* see section 6.7.4.1 */
-	fcf->ar = !is_broadcast && ctx->ack_requested;
+	fcf->ar = !is_broadcast && !is_enh_ack && ctx->ack_requested;
 
 	if (params->dst.len == IEEE802154_SHORT_ADDR_LENGTH) {
 		fcf->dst_addr_mode = IEEE802154_ADDR_MODE_SHORT;
