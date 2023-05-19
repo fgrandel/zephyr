@@ -401,6 +401,38 @@ out:
 	return ret;
 }
 
+static bool ieee802154_parse_frame(struct net_if *iface, struct net_pkt *pkt,
+				   struct ieee802154_mpdu *mpdu)
+{
+	/* The IEEE 802.15.4 stack assumes that drivers provide a single-fragment package. */
+	__ASSERT_NO_MSG(pkt->buffer && pkt->buffer->frags == NULL);
+
+	if (!ieee802154_parse_mhr(pkt, mpdu)) {
+		return false;
+	}
+
+	if (!ieee802154_filter(iface, &mpdu->mhr)) {
+		return false;
+	}
+
+	if (mpdu->mhr.frame_control.frame_type == IEEE802154_FRAME_TYPE_ACK) {
+		return false;
+	}
+
+	/* Section 6.7.2: "The device shall process the frame using the incoming
+	 * frame security procedure [...].
+	 */
+	if (!ieee802154_incoming_security_procedure(iface, pkt, mpdu)) {
+		return false;
+	}
+
+	if (!ieee802154_parse_mac_payload(mpdu)) {
+		return false;
+	}
+
+	return true;
+}
+
 static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pkt)
 {
 	struct ieee802154_frame_control *frame_control;
@@ -409,33 +441,11 @@ static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pk
 	size_t ll_hdr_len;
 	bool is_broadcast;
 
-	/* The IEEE 802.15.4 stack assumes that drivers provide a single-fragment package. */
-	__ASSERT_NO_MSG(pkt->buffer && pkt->buffer->frags == NULL);
-
-	if (!ieee802154_parse_mhr(pkt, &mpdu)) {
-		return NET_DROP;
-	}
-
-	if (!ieee802154_filter(iface, &mpdu.mhr)) {
+	if (!ieee802154_parse_frame(iface, pkt, &mpdu)) {
 		return NET_DROP;
 	}
 
 	frame_control = &mpdu.mhr.frame_control;
-
-	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_ACK) {
-		return NET_DROP;
-	}
-
-	/* Section 6.7.2: "The device shall process the frame using the incoming
-	 * frame security procedure [...].
-	 */
-	if (!ieee802154_incoming_security_procedure(iface, pkt, &mpdu)) {
-		return NET_DROP;
-	}
-
-	if (!ieee802154_parse_mac_payload(&mpdu)) {
-		return NET_DROP;
-	}
 
 	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_BEACON) {
 		verdict = ieee802154_handle_beacon(iface, &mpdu, net_pkt_ieee802154_lqi(pkt));
