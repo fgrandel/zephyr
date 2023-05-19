@@ -277,38 +277,6 @@ static inline void swap_and_set_pkt_ll_addr(struct net_linkaddr *addr, bool has_
 	}
 }
 
-static bool ieee802154_parse_frame(struct net_if *iface, struct net_pkt *pkt,
-				   struct ieee802154_mpdu *mpdu)
-{
-	/* The IEEE 802.15.4 stack assumes that drivers provide a single-fragment package. */
-	__ASSERT_NO_MSG(pkt->buffer && pkt->buffer->frags == NULL);
-
-	if (!ieee802154_parse_mhr(pkt, mpdu)) {
-		return false;
-	}
-
-	if (!ieee802154_filter(iface, &mpdu->mhr)) {
-		return false;
-	}
-
-	if (mpdu->mhr.frame_control.frame_type == IEEE802154_FRAME_TYPE_ACK) {
-		return false;
-	}
-
-	/* Section 6.7.2: "The device shall process the frame using the incoming
-	 * frame security procedure [...].
-	 */
-	if (!ieee802154_incoming_security_procedure(iface, pkt, mpdu)) {
-		return false;
-	}
-
-	if (!ieee802154_parse_mac_payload(mpdu)) {
-		return false;
-	}
-
-	return true;
-}
-
 static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pkt)
 {
 	struct ieee802154_frame_control *frame_control;

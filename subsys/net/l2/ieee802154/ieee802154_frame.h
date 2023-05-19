@@ -529,6 +529,12 @@ bool ieee802154_parse_mhr(struct net_pkt *pkt, struct ieee802154_mpdu *mpdu);
 bool ieee802154_filter(struct net_if *iface, struct ieee802154_mhr *mhr);
 
 /**
+ * Parse the given packet as an IEEE 802.15.4 frame.
+ */
+bool ieee802154_parse_frame(struct net_if *iface, struct net_pkt *pkt,
+			    struct ieee802154_mpdu *mpdu);
+
+/**
  * Parse the MAC payload after it has been authenticated and/or decrypted.
  */
 bool ieee802154_parse_mac_payload(struct ieee802154_mpdu *mpdu);
