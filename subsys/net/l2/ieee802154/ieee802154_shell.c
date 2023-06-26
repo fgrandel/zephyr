@@ -620,6 +620,84 @@ static int cmd_ieee802154_get_tx_power(const struct shell *sh,
 	return 0;
 }
 
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+static int cmd_ieee802154_tsch_set_mode(const struct shell *sh, size_t argc, char *argv[])
+{
+	struct ieee802154_tsch_mode_params tsch_mode_params = {.cca = false};
+	struct net_if *iface = net_if_get_ieee802154();
+	int ret = 0;
+
+	if (!iface) {
+		shell_fprintf(sh, SHELL_INFO, "No IEEE 802.15.4 interface found.\n");
+		return -ENOEXEC;
+	}
+
+	if (argc < 2 || argc > 3) {
+		ret = -ENOEXEC;
+		goto out;
+	}
+
+	if (argc == 3) {
+		if (!strcmp(argv[2], "cca")) {
+			tsch_mode_params.cca = true;
+		} else if (strcmp(argv[2], "nocca")) {
+			ret = -ENOEXEC;
+			goto out;
+		}
+	}
+
+	if (!strcmp(argv[1], "on") || !strcmp(argv[1], "1")) {
+		tsch_mode_params.mode = true;
+	} else if (!strcmp(argv[1], "off") || !strcmp(argv[1], "0")) {
+		tsch_mode_params.mode = false;
+	} else {
+		ret = -ENOEXEC;
+	}
+
+out:
+	if (ret) {
+		shell_help(sh);
+	} else {
+		if (net_mgmt(NET_REQUEST_IEEE802154_SET_TSCH_MODE, iface, &tsch_mode_params,
+			     sizeof(tsch_mode_params))) {
+			shell_fprintf(sh, SHELL_WARNING, "Could not set TSCH mode to %s %s CCA.\n",
+				      tsch_mode_params.mode ? "on" : "off",
+				      tsch_mode_params.cca ? "with" : "without");
+			ret = -ENOEXEC;
+		} else {
+			shell_fprintf(sh, SHELL_NORMAL, "TSCH mode set to %s %s CCA.\n",
+				      tsch_mode_params.mode ? "on" : "off",
+				      tsch_mode_params.cca ? "with" : "without");
+		}
+	}
+
+	return ret;
+}
+
+static int cmd_ieee802154_tsch_get_mode(const struct shell *sh, size_t argc, char *argv[])
+{
+	struct ieee802154_tsch_mode_params tsch_mode_params = {0};
+	struct net_if *iface = net_if_get_ieee802154();
+
+	if (!iface) {
+		shell_fprintf(sh, SHELL_INFO, "No IEEE 802.15.4 interface found.\n");
+		return -ENOEXEC;
+	}
+
+	if (net_mgmt(NET_REQUEST_IEEE802154_GET_TSCH_MODE, iface, &tsch_mode_params,
+		     sizeof(tsch_mode_params))) {
+		shell_fprintf(sh, SHELL_WARNING, "Could not get TSCH mode.\n");
+		return -ENOEXEC;
+	}
+
+	shell_fprintf(sh, SHELL_NORMAL, "TSCH mode is %s %s CCA.\n",
+		      tsch_mode_params.mode ? "on" : "off",
+		      tsch_mode_params.cca ? "with" : "without");
+
+	return 0;
+}
+#endif
+
 SHELL_STATIC_SUBCMD_SET_CREATE(ieee802154_commands,
 	SHELL_CMD(ack, NULL,
 		  "<set/1 | unset/0> Set auto-ack flag",
@@ -664,6 +742,14 @@ SHELL_STATIC_SUBCMD_SET_CREATE(ieee802154_commands,
 	SHELL_CMD(set_tx_power,	NULL,
 		  "<-18/-7/-4/-2/0/1/2/3/5> Set TX power",
 		  cmd_ieee802154_set_tx_power),
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	SHELL_CMD(set_tsch_mode, NULL,
+		  "<on/1 | off/0> [<[no]cca>] Set TSCH mode, TSCH CCA is off by default",
+		  cmd_ieee802154_tsch_set_mode),
+	SHELL_CMD(get_tsch_mode, NULL,
+		  "Get current TSCH mode and TSCH CCA status",
+		  cmd_ieee802154_tsch_get_mode),
+#endif
 	SHELL_SUBCMD_SET_END
 );
 
