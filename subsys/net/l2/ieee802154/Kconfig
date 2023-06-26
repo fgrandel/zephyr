@@ -169,9 +169,12 @@ endif
 config NET_L2_IEEE802154_TSCH
 	bool "Start the IEEE 802.15.4 L2 in TSCH mode [EXPERIMENTAL]"
 	select EXPERIMENTAL
+	depends on NET_TIME_REFERENCE_CLOCK
 	select NET_L2_IEEE802154_IE_SUPPORT
 	select NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
 	select NET_PKT_TXTIME
+	# requires macTimestampSupported, see IEEE 802.15.4-2020, section 6.5.4.3
+	select NET_PKT_TIMESTAMP
 	help
 	  Start the 802.15.4 L2 driver in TSCH (time slotted channel hopping)
 	  mode (MAC PIB attribute: macTschEnabled). This is EXPERIMENTAL work
