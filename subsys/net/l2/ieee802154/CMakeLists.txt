@@ -48,6 +48,7 @@ zephyr_library_sources_ifdef(
   ieee802154_radio_tsch.c
   ieee802154_tsch_nbr.c
   ieee802154_tsch_op.c
+  ieee802154_tsch_schedule.c
   ieee802154_utils.c
   )
 
