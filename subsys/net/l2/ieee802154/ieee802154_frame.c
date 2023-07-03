@@ -772,18 +772,11 @@ bool ieee802154_filter(struct net_if *iface, struct ieee802154_mhr *mhr)
 			goto out;
 		}
 
-	} else if (frame_control->dst_addr_mode == IEEE802154_ADDR_MODE_NONE &&
+	} else if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_IMPLICIT_BROADCAST) &&
+		   frame_control->dst_addr_mode == IEEE802154_ADDR_MODE_NONE &&
 		   frame_control->has_dst_pan == false) {
 		/* d.3) The Destination Address field and the Destination PAN ID
-		 *       field are not included in the frame and macImplicitBroadcast is TRUE.
-		 *
-		 * Also see section 8.4.3.1, table 8-94, macImplicitBroadcast.
-		 *
-		 * Deviating from the standard we assume that macImplicitBroadcast is TRUE
-		 * by default to maintain backwards compatibility.
-		 *
-		 * TODO: We might want to make this MAC PIB attribute configurable
-		 *       in the future.
+		 * field are not included in the frame and macImplicitBroadcast is TRUE.
 		 */
 
 	} else {

@@ -49,6 +49,16 @@ config NET_DEBUG_L2_IEEE802154_DISPLAY_PACKET_TX
 
 endchoice
 
+config NET_L2_IEEE802154_IMPLICIT_BROADCAST
+	bool "IEEE 802.15.4 implicit broadcast"
+	default y
+	help
+	  Indicates whether frames without a destination PAN ID and a destination
+	  address are to be treated as though they are addressed to the broadcast
+	  PAN ID and broadcast short address (MAC PIB attribute: macImplicitBroadcast).
+	  Deviating from the standard implicit broadcasts are accepted by default
+	  to maintain backwards compatibility.
+
 config NET_L2_IEEE802154_ACK_REPLY
 	bool
 	select DEPRECATED
