@@ -55,6 +55,34 @@ struct ieee802154_tsch_slotframe {
 	uint8_t advertise: 1;    /* true = advertised in beacons */
 };
 
+/* see section 8.4.3.3.4, table 8-99 */
+struct ieee802154_tsch_timeslot_template {
+	uint16_t cca_offset; /* The time between the beginning of timeslot and start of CCA
+			      * operation, in us.
+			      */
+	uint16_t cca;	     /* Duration of CCA, in us. */
+	uint16_t tx_offset; /* The time between the beginning of the timeslot and the start of frame
+			     * transmission, in us.
+			     */
+	uint16_t rx_offset; /* Beginning of the timeslot to when the receiver shall be listening, in
+			     * us.
+			     */
+	uint16_t rx_ack_delay; /* End of frame to when the transmitter shall listen for
+				* acknowledgment, in us.
+				*/
+	uint16_t tx_ack_delay; /* End of frame to start of acknowledgment, in us. */
+	uint16_t rx_wait;      /* The time to wait for start of frame, in us. */
+	uint16_t rx_tx;	       /* Transmit to Receive turnaround, in us. */
+	uint16_t max_ack;      /* Transmission time to send an acknowledgment, in us. */
+	uint16_t ack_wait;     /* Minimum time to wait for the start of an acknowledgment in us. */
+	uint32_t max_tx : 20;  /* Transmission time to send the maximum length frame, in us. */
+	uint32_t _unused_1 : 12;
+	uint32_t length : 20; /* The total length of the timeslot including any unused time after
+			       * frame transmission and acknowledgment, in us.
+			       */
+	uint32_t _unused_2 : 12;
+};
+
 /**
  * @}
  */

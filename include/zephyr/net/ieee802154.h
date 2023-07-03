@@ -374,6 +374,8 @@ struct ieee802154_context {
 	struct k_sem ack_lock;
 
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	/* see section 8.4.3.3.4 */
+	struct ieee802154_tsch_timeslot_template tsch_timeslot_template;
 	/* see section 8.4.3.3.2 */
 	sys_sflist_t tsch_slotframe_table;
 

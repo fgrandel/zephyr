@@ -41,6 +41,9 @@ LOG_MODULE_REGISTER(net_ieee802154, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #include "ieee802154_security.h"
 #include "ieee802154_utils.h"
 
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+#include "ieee802154_tsch_op.h"
+#endif
 #define BUF_TIMEOUT K_MSEC(50)
 
 NET_BUF_POOL_DEFINE(tx_frame_buf_pool, 1, IEEE802154_MTU, 8, NULL);
@@ -582,6 +585,10 @@ void ieee802154_init(struct net_if *iface)
 	ctx->linkaddr.len = IEEE802154_EXT_ADDR_LENGTH;
 	memcpy(ctx->linkaddr.addr, eui64_be, IEEE802154_EXT_ADDR_LENGTH);
 	net_if_set_link_addr(iface, ctx->linkaddr.addr, ctx->linkaddr.len, ctx->linkaddr.type);
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	ieee802154_tsch_op_init(iface);
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
 
 	if (IS_ENABLED(CONFIG_IEEE802154_NET_IF_NO_AUTO_START) ||
 	    IS_ENABLED(CONFIG_NET_CONFIG_SETTINGS)) {
