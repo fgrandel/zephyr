@@ -544,7 +544,7 @@ bool ieee802154_parse_mac_payload(struct ieee802154_mpdu *mpdu);
  * tailroom of an IEEE 802.15.4 generic data frame based on the given input.
  */
 int ieee802154_get_data_frame_params(struct ieee802154_context *ctx, struct net_linkaddr *dst,
-				     struct net_linkaddr *src,
+				     struct net_linkaddr *src, int frame_version,
 				     struct ieee802154_frame_params *params, uint8_t *ll_hdr_len,
 				     uint8_t *authtag_len);
 
@@ -578,8 +578,9 @@ bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt
  * this procedure has been fully implemented.
  */
 bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame_type,
-				       struct ieee802154_frame_params *params, struct net_buf *buf,
-				       uint8_t ll_hdr_len, uint8_t authtag_len);
+				       int frame_version, struct ieee802154_frame_params *params,
+				       struct net_buf *buf, uint8_t ll_hdr_len,
+				       uint8_t authtag_len);
 
 #ifdef CONFIG_NET_L2_IEEE802154_MGMT
 /**

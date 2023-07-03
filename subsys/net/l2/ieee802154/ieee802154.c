@@ -137,6 +137,17 @@ enum net_verdict ieee802154_handle_ack(struct net_if *iface, struct net_pkt *pkt
 		return NET_DROP;
 	}
 
+	if (frame_control->frame_version == IEEE802154_VERSION_802154) {
+		if (!ieee802154_filter(iface, &mpdu.mhr)) {
+			return NET_DROP;
+		}
+
+		if (!ieee802154_incoming_security_procedure(iface, pkt, &mpdu)) {
+			return NET_DROP;
+		}
+
+		/* TODO: handle time correction IE (requires TSCH operation) */
+	}
 
 	k_sem_give(&ctx->ack_lock);
 
@@ -414,9 +425,9 @@ static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 	}
 
 	if (!send_raw) {
-		if (ieee802154_get_data_frame_params(ctx, net_pkt_lladdr_dst(pkt),
-						     net_pkt_lladdr_src(pkt), &params, &ll_hdr_len,
-						     &authtag_len)) {
+		if (ieee802154_get_data_frame_params(
+			    ctx, net_pkt_lladdr_dst(pkt), net_pkt_lladdr_src(pkt),
+			    IEEE802154_VERSION_802154_2006, &params, &ll_hdr_len, &authtag_len)) {
 			return -EINVAL;
 		}
 
@@ -464,7 +475,8 @@ static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 		net_buf_add(frame_buf, authtag_len);
 
 		if (!(send_raw ||
-		      ieee802154_write_mhr_and_security(ctx, IEEE802154_FRAME_TYPE_DATA, &params,
+		      ieee802154_write_mhr_and_security(ctx, IEEE802154_FRAME_TYPE_DATA,
+							IEEE802154_VERSION_802154_2006, &params,
 							frame_buf, ll_hdr_len, authtag_len))) {
 			return -EINVAL;
 		}

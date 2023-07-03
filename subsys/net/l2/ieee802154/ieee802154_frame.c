@@ -39,49 +39,178 @@ const uint8_t level_2_authtag_len[4] = {0, IEEE802154_AUTH_TAG_LENGTH_32,
 					IEEE802154_AUTH_TAG_LENGTH_128};
 #endif
 
-static inline bool get_pan_id_comp(int dst_addr_mode, int src_addr_mode, uint16_t dst_pan_id,
-				   uint16_t src_pan_id, bool *pan_id_comp)
+enum pan_id_compr_lookup_table_entry {
+	IEEE802154_PAN_ID_IS_NOT_COMPRESSED = 0x0,
+	IEEE802154_PAN_ID_IS_COMPRESSED,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID,
+};
+
+/* The following lookup table represents section 7.2.2.6, table 7-2
+ *
+ * It determines whether the compression bit should be set given the
+ * state of the addressing fields of a frame.
+ *
+ * Keys are encoded as 6 bits:
+ * - 2 bits destination addressing mode
+ * - 2 bits source addressing mode
+ * - 1 bit destination PAN ID is present
+ * - 1 bit source PAN ID is present
+ *
+ * The values represent the state of the PAN ID compression field
+ * in the header for frames with version 0b10.
+ */
+static const uint8_t pan_id_compr_lookup_table[64] = {
+	IEEE802154_PAN_ID_IS_NOT_COMPRESSED,  IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_COMPRESSED,      IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_COMPRESSED,      IEEE802154_PAN_ID_IS_NOT_COMPRESSED,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_COMPRESSED,      IEEE802154_PAN_ID_IS_NOT_COMPRESSED,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_COMPRESSED,      IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_NOT_COMPRESSED,  IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_COMPRESSED,      IEEE802154_PAN_ID_IS_NOT_COMPRESSED,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_COMPRESSED,      IEEE802154_PAN_ID_IS_NOT_COMPRESSED,
+	IEEE802154_PAN_ID_IS_COMPRESSED,      IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_NOT_COMPRESSED,  IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_COMPRESSED_INVALID, IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_COMPRESSED,      IEEE802154_PAN_ID_IS_NOT_COMPRESSED,
+	IEEE802154_PAN_ID_IS_COMPRESSED,      IEEE802154_PAN_ID_COMPRESSED_INVALID,
+	IEEE802154_PAN_ID_IS_NOT_COMPRESSED,  IEEE802154_PAN_ID_COMPRESSED_INVALID};
+/* see section 7.2.2.6 */
+static inline enum pan_id_compr_lookup_table_entry
+pan_id_compr_lookup(int dst_addr_mode, int src_addr_mode, bool has_dst_pan, bool has_src_pan)
+{
+	return pan_id_compr_lookup_table[(dst_addr_mode << 4U) + (src_addr_mode << 2U) +
+					 (has_dst_pan << 1U) + has_src_pan];
+}
+
+/* The following lookup table represents section 7.2.2.6, table 7-2
+ *
+ * It determines whether the source and destination PAN IDs are present
+ * in the header given the state state of the addressing mode and PAN
+ * compression fields of the frame control field.
+ *
+ * Keys are encoded as 6 bits:
+ * - 2 bits destination addressing mode (MSB)
+ * - 2 bits source addressing mode
+ * - 1 bit PAN ID compression (LSB)
+ *
+ * The values represent the expected PAN IDs in the addressing fields
+ * of the frame:
+ * - 1 bit invalid frame control field indicator (if set the other bits are zero, MSB)
+ * - 1 bit destination PAN ID is present
+ * - 1 bit source PAN ID is present (LSB)
+ */
+static const uint8_t dst_and_src_pan_id_state_lookup_table[32] = {
+	0x0, 0x2, 0x4, 0x4, 0x1, 0x0, 0x1, 0x0, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4, 0x4,
+	0x2, 0x0, 0x4, 0x4, 0x3, 0x2, 0x3, 0x2, 0x2, 0x0, 0x4, 0x4, 0x3, 0x2, 0x2, 0x0,
+};
+
+/* see section 7.2.2.6 */
+static inline uint8_t pan_id_dst_and_src_pan_id_state_lookup(int dst_addr_mode, int src_addr_mode,
+							     bool pan_id_comp)
+{
+	return dst_and_src_pan_id_state_lookup_table[(dst_addr_mode << 3U) + (src_addr_mode << 1U) +
+						     pan_id_comp];
+}
+
+#define IEEE802154_PAN_ID_COMP_INVALID_MASK BIT(2U)
+#define IEEE802154_HAS_DST_PAN_ID_MASK	    BIT(1U)
+#define IEEE802154_HAS_SRC_PAN_ID_MASK	    BIT(0U)
+
+/* see section 7.2.2.6 */
+static inline bool verify_and_get_has_dst_pan_id(int frame_version, int dst_addr_mode,
+						 int src_addr_mode, bool pan_id_comp,
+						 bool *has_dst_pan_id)
+{
+	if (frame_version == IEEE802154_VERSION_802154) {
+		uint8_t dst_and_src_pan_id_state = pan_id_dst_and_src_pan_id_state_lookup(
+			dst_addr_mode, src_addr_mode, pan_id_comp);
+
+		if (dst_and_src_pan_id_state & IEEE802154_PAN_ID_COMP_INVALID_MASK) {
+			return false;
+		}
+
+		*has_dst_pan_id = dst_and_src_pan_id_state & IEEE802154_HAS_DST_PAN_ID_MASK;
+	} else {
+		bool has_dst_addr = dst_addr_mode != IEEE802154_ADDR_MODE_NONE;
+		bool has_src_addr = src_addr_mode != IEEE802154_ADDR_MODE_NONE;
+		bool both_present = has_src_addr && has_dst_addr;
+
+		if (!both_present && pan_id_comp != 0) {
+			return false;
+		}
+
+		*has_dst_pan_id = both_present ? true : has_dst_addr;
+	}
+
+	return true;
+}
+
+/* see section 7.2.2.6 */
+static inline bool verify_and_get_has_src_pan_id(int frame_version, int dst_addr_mode,
+						 int src_addr_mode, bool pan_id_comp,
+						 bool *has_src_pan_id)
+{
+	if (frame_version == IEEE802154_VERSION_802154) {
+		uint8_t dst_and_src_pan_id_state = pan_id_dst_and_src_pan_id_state_lookup(
+			dst_addr_mode, src_addr_mode, pan_id_comp);
+
+		if (dst_and_src_pan_id_state & IEEE802154_PAN_ID_COMP_INVALID_MASK) {
+			return false;
+		}
+
+		*has_src_pan_id = dst_and_src_pan_id_state & IEEE802154_HAS_SRC_PAN_ID_MASK;
+	} else {
+		bool has_dst_addr = dst_addr_mode != IEEE802154_ADDR_MODE_NONE;
+		bool has_src_addr = src_addr_mode != IEEE802154_ADDR_MODE_NONE;
+		bool both_present = has_src_addr && has_dst_addr;
+
+		if (!both_present && pan_id_comp != 0) {
+			return false;
+		}
+
+		*has_src_pan_id = both_present ? !pan_id_comp : has_src_addr;
+	}
+
+	return true;
+}
+
+static bool get_pan_id_comp(int frame_version, int dst_addr_mode, int src_addr_mode,
+			    uint16_t dst_pan_id, uint16_t src_pan_id, bool *pan_id_comp)
 {
 	/* see section 7.2.2.6 */
+	if (frame_version == IEEE802154_VERSION_802154) {
+		enum pan_id_compr_lookup_table_entry pan_id_comp_lkp =
+			pan_id_compr_lookup(dst_addr_mode, src_addr_mode, dst_pan_id,
+					    dst_pan_id == src_pan_id ? false : src_pan_id);
+
+		*pan_id_comp = pan_id_comp_lkp == IEEE802154_PAN_ID_IS_COMPRESSED;
+
+		return pan_id_comp_lkp != IEEE802154_PAN_ID_COMPRESSED_INVALID;
+	}
+
 	bool has_dst_addr = dst_addr_mode != IEEE802154_ADDR_MODE_NONE;
 	bool has_src_addr = src_addr_mode != IEEE802154_ADDR_MODE_NONE;
 	bool both_present = has_src_addr && has_dst_addr;
 
 	*pan_id_comp = both_present && dst_pan_id == src_pan_id;
-
-	return true;
-}
-
-/* see section 7.2.2.6 */
-static inline bool verify_and_get_has_dst_pan_id(int dst_addr_mode, int src_addr_mode,
-						 bool pan_id_comp, bool *has_dst_pan_id)
-{
-	bool has_dst_addr = dst_addr_mode != IEEE802154_ADDR_MODE_NONE;
-	bool has_src_addr = src_addr_mode != IEEE802154_ADDR_MODE_NONE;
-	bool both_present = has_src_addr && has_dst_addr;
-
-	if (!both_present && pan_id_comp != 0) {
-		return false;
-	}
-
-	*has_dst_pan_id = both_present ? true : has_dst_addr;
-
-	return true;
-}
-
-/* see section 7.2.2.6 */
-static inline bool verify_and_get_has_src_pan_id(int dst_addr_mode, int src_addr_mode,
-						 bool pan_id_comp, bool *has_src_pan_id)
-{
-	bool has_dst_addr = dst_addr_mode != IEEE802154_ADDR_MODE_NONE;
-	bool has_src_addr = src_addr_mode != IEEE802154_ADDR_MODE_NONE;
-	bool both_present = has_src_addr && has_dst_addr;
-
-	if (!both_present && pan_id_comp != 0) {
-		return false;
-	}
-
-	*has_src_pan_id = both_present ? !pan_id_comp : has_src_addr;
 
 	return true;
 }
@@ -146,12 +275,12 @@ static inline int parse_fcf_seq(uint8_t *start, struct ieee802154_mhr *mhr)
 #endif
 
 	/* Verify PAN ID compression bit, see section 7.2.2.6 */
-	if (!verify_and_get_has_dst_pan_id(fcf->dst_addr_mode, fcf->src_addr_mode, fcf->pan_id_comp,
-					   &has_dst_pan_id)) {
+	if (!verify_and_get_has_dst_pan_id(fcf->frame_version, fcf->dst_addr_mode,
+					   fcf->src_addr_mode, fcf->pan_id_comp, &has_dst_pan_id)) {
 		return -EINVAL;
 	}
-	if (!verify_and_get_has_src_pan_id(fcf->dst_addr_mode, fcf->src_addr_mode, fcf->pan_id_comp,
-					   &has_src_pan_id)) {
+	if (!verify_and_get_has_src_pan_id(fcf->frame_version, fcf->dst_addr_mode,
+					   fcf->src_addr_mode, fcf->pan_id_comp, &has_src_pan_id)) {
 		return -EINVAL;
 	}
 
@@ -768,7 +897,7 @@ static int ieee802154_get_src_addr_mode(struct net_linkaddr *src, struct ieee802
 }
 
 /* context must be locked */
-static uint8_t ieee802154_compute_header_size(struct ieee802154_context *ctx,
+static uint8_t ieee802154_compute_header_size(struct ieee802154_context *ctx, int frame_version,
 					      struct ieee802154_frame_params *params,
 					      bool is_encrypted)
 {
@@ -788,17 +917,17 @@ static uint8_t ieee802154_compute_header_size(struct ieee802154_context *ctx,
 	src_addr_mode = params->len == IEEE802154_SHORT_ADDR_LENGTH ? IEEE802154_ADDR_MODE_SHORT
 								    : IEEE802154_ADDR_MODE_EXTENDED;
 
-	if (!get_pan_id_comp(dst_addr_mode, src_addr_mode, params->dst.pan_id, params->pan_id,
-			     &pan_id_comp)) {
+	if (!get_pan_id_comp(frame_version, dst_addr_mode, src_addr_mode, params->dst.pan_id,
+			     params->pan_id, &pan_id_comp)) {
 		return -EINVAL;
 	}
 
-	if (!verify_and_get_has_dst_pan_id(dst_addr_mode, src_addr_mode, pan_id_comp,
+	if (!verify_and_get_has_dst_pan_id(frame_version, dst_addr_mode, src_addr_mode, pan_id_comp,
 					   &has_dst_pan_id)) {
 		return -EINVAL;
 	}
 
-	if (!verify_and_get_has_src_pan_id(dst_addr_mode, src_addr_mode, pan_id_comp,
+	if (!verify_and_get_has_src_pan_id(frame_version, dst_addr_mode, src_addr_mode, pan_id_comp,
 					   &has_src_pan_id)) {
 		return -EINVAL;
 	}
@@ -870,7 +999,7 @@ done:
 }
 
 int ieee802154_get_data_frame_params(struct ieee802154_context *ctx, struct net_linkaddr *dst,
-				     struct net_linkaddr *src,
+				     struct net_linkaddr *src, int frame_version,
 				     struct ieee802154_frame_params *params, uint8_t *ll_hdr_len,
 				     uint8_t *authtag_len)
 {
@@ -915,7 +1044,8 @@ int ieee802154_get_data_frame_params(struct ieee802154_context *ctx, struct net_
 	is_encrypted = ctx->sec_ctx.level != IEEE802154_SECURITY_LEVEL_NONE;
 #endif
 
-	ll_hdr_len_or_error = ieee802154_compute_header_size(ctx, params, is_encrypted);
+	ll_hdr_len_or_error =
+		ieee802154_compute_header_size(ctx, frame_version, params, is_encrypted);
 	if (ll_hdr_len_or_error < 0) {
 		res = ll_hdr_len_or_error;
 		goto release_ctx;
@@ -946,8 +1076,8 @@ static inline int write_fcf_and_seq(uint8_t *start, int frame_type, uint8_t *seq
 	fcf->seq_num_suppr = 0U;
 	fcf->ie_present = 0U;
 
-	if (!get_pan_id_comp(fcf->dst_addr_mode, fcf->src_addr_mode, dst_pan_id, src_pan_id,
-			     &pan_id_comp)) {
+	if (!get_pan_id_comp(fcf->frame_version, fcf->dst_addr_mode, fcf->src_addr_mode, dst_pan_id,
+			     src_pan_id, &pan_id_comp)) {
 		return -EINVAL;
 	}
 
@@ -967,14 +1097,14 @@ static inline int write_fcf_and_seq(uint8_t *start, int frame_type, uint8_t *seq
 
 /* context must be locked */
 static inline void initialize_generic_frame_fcf(struct ieee802154_context *ctx, int frame_type,
+						int frame_version,
 						struct ieee802154_frame_params *params,
 						struct ieee802154_fcf *fcf)
 {
 	bool is_broadcast;
 	bool is_enh_ack;
 
-	/* We support version 2006 only for now */
-	fcf->frame_version = IEEE802154_VERSION_802154_2006;
+	fcf->frame_version = frame_version;
 
 	is_broadcast = params->dst.len == IEEE802154_SHORT_ADDR_LENGTH &&
 		       params->dst.short_addr == IEEE802154_BROADCAST_ADDRESS;
@@ -1012,8 +1142,9 @@ static int write_addressing_fields(uint8_t *start, struct ieee802154_frame_param
 	if (fcf->dst_addr_mode != IEEE802154_ADDR_MODE_NONE) {
 		address_field = (struct ieee802154_address_field *)cursor;
 
-		if (!verify_and_get_has_dst_pan_id(fcf->dst_addr_mode, fcf->src_addr_mode,
-						   fcf->pan_id_comp, &has_pan_id)) {
+		if (!verify_and_get_has_dst_pan_id(fcf->frame_version, fcf->dst_addr_mode,
+						   fcf->src_addr_mode, fcf->pan_id_comp,
+						   &has_pan_id)) {
 			return -EINVAL;
 		}
 
@@ -1044,8 +1175,8 @@ static int write_addressing_fields(uint8_t *start, struct ieee802154_frame_param
 
 	address_field = (struct ieee802154_address_field *)cursor;
 
-	if (!verify_and_get_has_src_pan_id(fcf->dst_addr_mode, fcf->src_addr_mode, fcf->pan_id_comp,
-					   &has_pan_id)) {
+	if (!verify_and_get_has_src_pan_id(fcf->frame_version, fcf->dst_addr_mode,
+					   fcf->src_addr_mode, fcf->pan_id_comp, &has_pan_id)) {
 		return -EINVAL;
 	}
 
@@ -1288,8 +1419,8 @@ out:
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
 
 bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame_type,
-				       struct ieee802154_frame_params *params, struct net_buf *buf,
-				       uint8_t ll_hdr_len, uint8_t authtag_len)
+				       int frame_version, struct ieee802154_frame_params *params,
+				       struct net_buf *buf, uint8_t ll_hdr_len, uint8_t authtag_len)
 {
 	struct ieee802154_address *src_addr;
 	struct ieee802154_fcf *fcf;
@@ -1315,7 +1446,7 @@ bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame
 	seq = &ctx->sequence;
 
 	fcf = (struct ieee802154_fcf *)cursor;
-	initialize_generic_frame_fcf(ctx, frame_type, params, fcf);
+	initialize_generic_frame_fcf(ctx, frame_type, frame_version, params, fcf);
 
 	progress = write_fcf_and_seq(cursor, frame_type, seq, params);
 	if (!advance_cursor(progress, &cursor, &remaining_length)) {

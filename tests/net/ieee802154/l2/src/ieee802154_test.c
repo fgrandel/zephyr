@@ -891,7 +891,8 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 	}
 
 	if (ieee802154_get_data_frame_params(ctx, net_pkt_lladdr_dst(pkt), net_pkt_lladdr_src(pkt),
-					     &params, &ll_hdr_len, &authtag_len)) {
+					     IEEE802154_VERSION_802154_2006, &params, &ll_hdr_len,
+					     &authtag_len)) {
 		NET_ERR("*** Failed to get frame params.\n");
 		goto release_pkt;
 	}
@@ -900,7 +901,8 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 	net_buf_add_mem(frame_buf, payload, sizeof(payload));
 	net_buf_add(frame_buf, authtag_len);
 
-	frame_result = ieee802154_write_mhr_and_security(ctx, IEEE802154_FRAME_TYPE_DATA, &params,
+	frame_result = ieee802154_write_mhr_and_security(ctx, IEEE802154_FRAME_TYPE_DATA,
+							 IEEE802154_VERSION_802154_2006, &params,
 							 frame_buf, ll_hdr_len, authtag_len);
 
 	if (src_ll_addr_len == IEEE802154_SHORT_ADDR_LENGTH) {
