@@ -40,6 +40,7 @@ zephyr_library_sources_ifdef(
 zephyr_library_sources_ifdef(
   CONFIG_NET_L2_IEEE802154_TSCH
   ieee802154_nbr.c
+  ieee802154_radio_tsch.c
   ieee802154_tsch_nbr.c
   ieee802154_tsch_op.c
   ieee802154_utils.c

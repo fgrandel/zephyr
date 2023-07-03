@@ -192,7 +192,9 @@ inline int ieee802154_wait_for_ack(struct net_if *iface, bool ack_required)
 
 int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_buf *frag)
 {
-	uint8_t remaining_attempts = CONFIG_NET_L2_IEEE802154_RADIO_TX_RETRIES + 1;
+	uint8_t remaining_attempts = IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)
+					     ? 1U
+					     : CONFIG_NET_L2_IEEE802154_RADIO_TX_RETRIES + 1;
 	bool hw_csma, ack_required;
 	int ret;
 
@@ -216,6 +218,8 @@ int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_
 		if (!hw_csma) {
 			ret = ieee802154_wait_for_clear_channel(iface);
 			if (ret != 0) {
+				/* TODO: reschedule TSCH transmission if ret == -EBUSY. */
+
 				NET_WARN("Clear channel assessment failed: dropping fragment %p on "
 					 "interface %p.",
 					 frag, iface);
@@ -248,7 +252,6 @@ int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_
 			 */
 			return 0;
 		}
-
 
 		/* No-op in case the driver has IEEE802154_HW_TX_RX_ACK capability. */
 		ret = ieee802154_wait_for_ack(iface, ack_required);

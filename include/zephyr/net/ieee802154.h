@@ -369,12 +369,15 @@ struct ieee802154_context {
 	/** see section 8.2.19.5, table 8-49, TschMode */
 	uint8_t tsch_mode: 1;
 
+	/** see section 8.2.19.5, table 8-49, TschCca */
+	uint8_t tsch_cca : 1;
+
 	/** @cond INTERNAL_HIDDEN */
-	uint8_t _unused: 3;
+	uint8_t _unused: 2;
 	/** INTERNAL_HIDDEN @endcond */
 #else
 	/** @cond INTERNAL_HIDDEN */
-	uint8_t _unused: 4;
+	uint8_t _unused: 3;
 	/** INTERNAL_HIDDEN @endcond */
 #endif /* CONFIG_NET_L2_IEEE802154_TSCH */
 
