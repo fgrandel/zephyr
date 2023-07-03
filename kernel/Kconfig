@@ -90,6 +90,7 @@ config PRIORITY_CEILING
 
 config NUM_METAIRQ_PRIORITIES
 	int "Number of very-high priority 'preemptor' threads"
+	default 1 if NET_L2_IEEE802154_TSCH
 	default 0
 	help
 	  This defines a set of priorities at the (numerically) lowest

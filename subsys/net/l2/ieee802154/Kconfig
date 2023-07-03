@@ -178,6 +178,12 @@ config NET_L2_IEEE802154_TSCH
 
 if NET_L2_IEEE802154_TSCH
 
+config NET_L2_IEEE802154_TSCH_STACK_SIZE
+	int "IEEE 802.15.4 TSCH operation stack size"
+	default 800
+	help
+	  Sets the stack size of the thread operating TSCH slotframes.
+
 config NET_L2_IEEE802154_MAX_NEIGHBORS
 	int "The maximum number of neighbors reachable from a IEEE 802.15.4 node"
 	default 8

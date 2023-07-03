@@ -180,6 +180,14 @@ config NET_CONFIG_IEEE802154_CHANNEL
 	  The channel to use by default in the sample application.
 endif
 
+if NET_L2_IEEE802154_TSCH
+config NET_CONFIG_IEEE802154_TSCH_MODE
+	bool "IEEE 802.15.4 TSCH mode"
+	default y
+	help
+	  TSCH mode will be initially on when selected.
+endif
+
 if NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
 config NET_CONFIG_IEEE802154_CHANNEL_RANGE_FROM
 	int "First channel to be supported"

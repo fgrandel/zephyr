@@ -73,6 +73,8 @@ enum net_request_ieee802154_cmd {
 	NET_REQUEST_IEEE802154_CMD_SET_TX_POWER,
 	NET_REQUEST_IEEE802154_CMD_SET_SECURITY_SETTINGS,
 	NET_REQUEST_IEEE802154_CMD_GET_SECURITY_SETTINGS,
+	NET_REQUEST_IEEE802154_CMD_SET_TSCH_MODE,
+	NET_REQUEST_IEEE802154_CMD_GET_TSCH_MODE,
 	NET_REQUEST_IEEE802154_CMD_SET_TSCH_SLOTFRAME,
 	NET_REQUEST_IEEE802154_CMD_DELETE_TSCH_SLOTFRAME,
 	NET_REQUEST_IEEE802154_CMD_SET_TSCH_LINK,
@@ -274,6 +276,18 @@ NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_SECURITY_SETTINGS);
 
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
 
+/** Enable or disable TSCH (MLME-TSCH-MODE request) */
+#define NET_REQUEST_IEEE802154_SET_TSCH_MODE                                                       \
+	(_NET_IEEE802154_BASE | NET_REQUEST_IEEE802154_CMD_SET_TSCH_MODE)
+
+NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_TSCH_MODE);
+
+/** Gets the current TSCH mode */
+#define NET_REQUEST_IEEE802154_GET_TSCH_MODE                                                       \
+	(_NET_IEEE802154_BASE | NET_REQUEST_IEEE802154_CMD_GET_TSCH_MODE)
+
+NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_TSCH_MODE);
+
 /**
  * Adds or edits TSCH slotframes, i.e. an MLME-SET- SLOTFRAME request with
  * ADD/MODIFY operation
@@ -424,6 +438,16 @@ struct ieee802154_security_params {
 			       * constructing the auxiliary security header
 			       */
 	uint8_t _unused : 3;
+};
+
+/**
+ * @brief TSCH mode request parameters
+ *
+ * Used to get, configure, enable or disable TSCH mode, see section 8.2.19.5, table 8-49.
+ */
+struct ieee802154_tsch_mode_params {
+	bool mode;
+	bool cca;
 };
 
 #ifdef __cplusplus

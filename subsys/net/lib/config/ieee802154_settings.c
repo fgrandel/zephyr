@@ -187,5 +187,20 @@ int z_net_config_ieee802154_setup(struct net_if *iface)
 		net_if_up(iface);
 	}
 
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	if (IS_ENABLED(CONFIG_NET_CONFIG_IEEE802154_TSCH_MODE)) {
+		struct ieee802154_tsch_mode_params tsch_mode_request =
+			(struct ieee802154_tsch_mode_params){
+				.mode = true,
+				.cca = IS_ENABLED(CONFIG_NET_L2_IEEE802154_RADIO_TSCH_CCA),
+			};
+
+		if (net_mgmt(NET_REQUEST_IEEE802154_SET_TSCH_MODE, iface, &tsch_mode_request,
+			     sizeof(tsch_mode_request))) {
+			return -EIO;
+		}
+	}
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
+
 	return 0;
 }

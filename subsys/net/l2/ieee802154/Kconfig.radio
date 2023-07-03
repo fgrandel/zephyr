@@ -46,6 +46,20 @@ config NET_L2_IEEE802154_RADIO_ALOHA
 endchoice
 endif # !NET_L2_IEEE802154_TSCH
 
+if NET_L2_IEEE802154_TSCH
+config NET_L2_IEEE802154_RADIO_TSCH_CCA
+	bool "IEEE 802.15.4 TSCH CCA"
+	default n
+	help
+	  Use the TSCH CCA mechanism to transmit packets. This should be selected
+	  if the TSCH network co-exists with non-TSCH networks on the same radio
+	  channel.
+	  For other devices in the same network, the start time of transmissions
+	  is closely aligned making intra-network collision avoidance using CCA
+	  ineffective. TSCH devices also use channel hopping, so there is no backoff
+	  period used when CCA prevents a transmission.
+endif # NET_L2_IEEE802154_TSCH
+
 config NET_L2_IEEE802154_RADIO_CSMA_CA_MAX_BO
 	depends on NET_L2_IEEE802154_RADIO_CSMA_CA
 	int "CSMA maximum backoffs"

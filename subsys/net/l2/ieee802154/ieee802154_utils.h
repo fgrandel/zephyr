@@ -541,6 +541,22 @@ static inline uint32_t ieee802154_get_response_wait_time_us(struct net_if *iface
 	return IEEE802154_MAC_RESPONSE_WAIT_TIME_DEFAULT *
 	       ieee802154_get_a_base_superframe_duration(iface);
 }
+/**
+ * @brief Determine whether the device is associated to a PAN via the interface
+ * represented by the given IEEE 802.15.4 context object.
+ *
+ * @note Callers must hold the context lock while accessing this function.
+ *
+ * @param ctx pointer to the IEEE 802.15.4 context object
+ *
+ * @return true if associated, otherwise false
+ */
+static inline bool ieee802154_is_associated(struct ieee802154_context *ctx)
+{
+	/* see section 8.4.3.1, table 8-94, macPanId and macShortAddress */
+	return ctx->pan_id != IEEE802154_PAN_ID_NOT_ASSOCIATED &&
+	       ctx->short_addr != IEEE802154_SHORT_ADDRESS_NOT_ASSOCIATED;
+}
 
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
 /**

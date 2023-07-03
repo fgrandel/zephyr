@@ -31,6 +31,7 @@ LOG_MODULE_REGISTER(net_ieee802154_mgmt, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #include "ieee802154_nbr.h"
 #include "ieee802154_priv.h"
 #include "ieee802154_security.h"
+#include "ieee802154_tsch_op.h"
 #include "ieee802154_utils.h"
 
 /**
@@ -295,14 +296,6 @@ static inline void remove_association(struct net_if *iface, struct ieee802154_co
 	ieee802154_radio_filter_short_addr(iface, IEEE802154_BROADCAST_ADDRESS);
 }
 
-/* Requires the context lock to be held. */
-static inline bool is_associated(struct ieee802154_context *ctx)
-{
-	/* see section 8.4.3.1, table 8-94, macPanId and macShortAddress */
-	return ctx->pan_id != IEEE802154_PAN_ID_NOT_ASSOCIATED &&
-	       ctx->short_addr != IEEE802154_SHORT_ADDRESS_NOT_ASSOCIATED;
-}
-
 enum net_verdict ieee802154_handle_mac_command(struct net_if *iface,
 					       struct ieee802154_mpdu *mpdu)
 {
@@ -341,7 +334,7 @@ enum net_verdict ieee802154_handle_mac_command(struct net_if *iface,
 
 		k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
-		if (is_associated(ctx)) {
+		if (ieee802154_is_associated(ctx)) {
 			k_sem_give(&ctx->ctx_lock);
 			return NET_DROP;
 		}
@@ -378,7 +371,7 @@ enum net_verdict ieee802154_handle_mac_command(struct net_if *iface,
 
 		k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
-		if (!is_associated(ctx)) {
+		if (!ieee802154_is_associated(ctx)) {
 			goto out;
 		}
 
@@ -471,7 +464,7 @@ static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
 
 	k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
-	if (is_associated(ctx)) {
+	if (ieee802154_is_associated(ctx)) {
 		k_sem_give(&ctx->ctx_lock);
 		return -EALREADY;
 	}
@@ -560,7 +553,7 @@ static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
 
 	k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
-	if (is_associated(ctx)) {
+	if (ieee802154_is_associated(ctx)) {
 		bool validated = false;
 
 		if (req->len == IEEE802154_SHORT_ADDR_LENGTH &&
@@ -616,7 +609,7 @@ static int ieee802154_disassociate(uint32_t mgmt_request, struct net_if *iface,
 
 	k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
-	if (!is_associated(ctx)) {
+	if (!ieee802154_is_associated(ctx)) {
 		k_sem_give(&ctx->ctx_lock);
 		return -EALREADY;
 	}
@@ -702,8 +695,9 @@ static int ieee802154_set_parameters(uint32_t mgmt_request,
 
 	k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
-	if (is_associated(ctx) && !(mgmt_request == NET_REQUEST_IEEE802154_SET_SHORT_ADDR &&
-				    value == IEEE802154_SHORT_ADDRESS_NOT_ASSOCIATED)) {
+	if (ieee802154_is_associated(ctx) &&
+	    !(mgmt_request == NET_REQUEST_IEEE802154_SET_SHORT_ADDR &&
+	      value == IEEE802154_SHORT_ADDRESS_NOT_ASSOCIATED)) {
 		ret = -EBUSY;
 		goto out;
 	}
@@ -879,7 +873,7 @@ static int ieee802154_set_security_settings(uint32_t mgmt_request,
 
 	k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
-	if (is_associated(ctx)) {
+	if (ieee802154_is_associated(ctx)) {
 		ret = -EBUSY;
 		goto out;
 	}
@@ -932,6 +926,52 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_SECURITY_SETTINGS,
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
 
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
+static int ieee802154_tsch_set_mode(uint32_t mgmt_request, struct net_if *iface, void *data,
+				    size_t len)
+{
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_tsch_mode_params *params;
+
+	if (len != sizeof(struct ieee802154_tsch_mode_params) || !data) {
+		return -EINVAL;
+	}
+
+	params = (struct ieee802154_tsch_mode_params *)data;
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+	ctx->tsch_cca = params->cca;
+	k_sem_give(&ctx->ctx_lock);
+
+	if (params->mode) {
+		return ieee802154_tsch_mode_on(iface);
+	} else {
+		return ieee802154_tsch_mode_off(iface);
+	}
+}
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_TSCH_MODE, ieee802154_tsch_set_mode);
+
+static int ieee802154_tsch_get_mode(uint32_t mgmt_request, struct net_if *iface, void *data,
+				    size_t len)
+{
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_tsch_mode_params *params;
+
+	if (len != sizeof(struct ieee802154_tsch_mode_params) || !data) {
+		return -EINVAL;
+	}
+
+	params = (struct ieee802154_tsch_mode_params *)data;
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+	params->mode = ctx->tsch_mode;
+	params->cca = ctx->tsch_cca;
+	k_sem_give(&ctx->ctx_lock);
+
+	return 0;
+}
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_TSCH_MODE, ieee802154_tsch_get_mode);
 
 static int ieee802154_tsch_set_slotframe(uint32_t mgmt_request, struct net_if *iface, void *data,
 					 size_t len)
