@@ -15,6 +15,11 @@ config NET_L2_IEEE802154_MGMT
 	select NET_MGMT_EVENT
 
 # Virtual configuration option that can be chosen by features that require
+# IEEE 802.15.4-2015+ information element (IE) parsing or writing.
+config NET_L2_IEEE802154_IE_SUPPORT
+	bool
+
+# Virtual configuration option that can be chosen by features that require
 # IEEE 802.15.4-2015+ channel hopping.
 config NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
 	bool
@@ -151,9 +156,20 @@ config NET_L2_IEEE802154_SECURITY_CRYPTO_DEV_NAME
 	  IEEE 802.15.4 soft MAC will use to run authentication, encryption and
 	  decryption operations on incoming/outgoing frames.
 
+if NET_L2_IEEE802154_IE_SUPPORT
+config NET_L2_IEEE802154_TSCH_MAX_ADV_SLOTFRAMES
+	int "Maximum number of advertised slotframes that can be received"
+	range 1 255
+	default 1
+	help
+	  Defines the maximum number of slotframes that can be received in a
+	  beacon from another coordinator.
+endif
+
 config NET_L2_IEEE802154_TSCH
 	bool "Start the IEEE 802.15.4 L2 in TSCH mode [EXPERIMENTAL]"
 	select EXPERIMENTAL
+	select NET_L2_IEEE802154_IE_SUPPORT
 	select NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
 	help
 	  Start the 802.15.4 L2 driver in TSCH (time slotted channel hopping)

@@ -26,6 +26,9 @@ void ieee802154_tsch_op_init(struct net_if *iface)
 	enum ieee802154_phy_channel_page channel_page;
 	bool is_subghz;
 
+	/* see section 8.4.3.3.1, table 8-96 */
+	ctx->tsch_join_metric = 1U;
+
 	channel_page = ieee802154_radio_current_channel_page(iface);
 	switch (channel_page) {
 	case IEEE802154_ATTR_PHY_CHANNEL_PAGE_ZERO_OQPSK_2450_BPSK_868_915:

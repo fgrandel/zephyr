@@ -13,6 +13,12 @@ tests:
   net.ieee802154.l2:
     extra_configs:
       - CONFIG_NET_SOCKETS=n
+      - CONFIG_NET_L2_IEEE802154_TSCH=n
   net.ieee802154.l2.sockets:
     extra_configs:
       - CONFIG_NET_SOCKETS=y
+      - CONFIG_NET_L2_IEEE802154_TSCH=n
+  net.ieee802154.l2.tsch:
+    extra_configs:
+      - CONFIG_NET_SOCKETS=y
+      - CONFIG_NET_L2_IEEE802154_TSCH=y

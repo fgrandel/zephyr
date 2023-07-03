@@ -640,7 +640,15 @@ bool ieee802154_parse_mhr(struct net_pkt *pkt, struct ieee802154_mpdu *mpdu)
 #endif
 
 	if (mhr->frame_control.ie_present) {
+#ifdef CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+		progress = ieee802154_parse_header_ies(cursor, remaining_length,
+						       &mpdu->mhr.header_ies);
+		if (!advance_cursor(progress, &cursor, &remaining_length)) {
+			return false;
+		}
+#else
 		return false;
+#endif
 	}
 
 	mpdu->mac_payload_length = remaining_length;
@@ -659,6 +667,16 @@ bool ieee802154_parse_mac_payload(struct ieee802154_mpdu *mpdu)
 	uint8_t remaining_length = mpdu->mac_payload_length;
 	uint8_t *cursor = mpdu->mac_payload;
 	int progress = 0;
+
+#ifdef CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+	if (mpdu->mhr.header_ies.payload_ie_present) {
+		progress =
+			ieee802154_parse_payload_ies(cursor, remaining_length, &mpdu->payload_ies);
+		if (!advance_cursor(progress, &cursor, &remaining_length)) {
+			return false;
+		}
+	}
+#endif /* CONFIG_NET_L2_IEEE802154_IE_SUPPORT */
 
 	if (frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
 		progress = parse_mac_command(cursor, remaining_length, mpdu);
@@ -1072,7 +1090,7 @@ release_ctx:
 
 /* context must be locked, requires addressing mode to already have been written */
 static inline int write_fcf_and_seq(uint8_t *start, int frame_type, uint8_t *seq,
-				    bool seq_num_suppr,
+				    bool seq_num_suppr, bool ie_present,
 				    struct ieee802154_frame_params *params)
 {
 	struct ieee802154_fcf *fcf = (struct ieee802154_fcf *)start;
@@ -1086,7 +1104,7 @@ static inline int write_fcf_and_seq(uint8_t *start, int frame_type, uint8_t *seq
 	fcf->frame_pending = false;
 	fcf->reserved = 0U;
 	fcf->seq_num_suppr = seq_num_suppr;
-	fcf->ie_present = 0U;
+	fcf->ie_present = ie_present;
 
 	if (!get_pan_id_comp(fcf->frame_version, fcf->dst_addr_mode, fcf->src_addr_mode, dst_pan_id,
 			     src_pan_id, &pan_id_comp)) {
@@ -1257,8 +1275,8 @@ static int write_aux_security_hdr(uint8_t *start, struct ieee802154_security_ctx
 /* context must be locked */
 static int outgoing_security_procedure(uint8_t *cursor, struct ieee802154_context *ctx,
 				       int frame_type, uint8_t *frame, struct ieee802154_fcf *fcf,
-				       uint8_t payload_len, uint8_t authtag_len,
-				       struct ieee802154_address *src_addr,
+				       uint8_t hdr_ies_len, uint8_t payload_len,
+				       uint8_t authtag_len, struct ieee802154_address *src_addr,
 				       uint64_t frame_counter_or_asn)
 {
 	struct ieee802154_security_ctx *sec_ctx = &ctx->sec_ctx;
@@ -1322,7 +1340,7 @@ static int outgoing_security_procedure(uint8_t *cursor, struct ieee802154_contex
 	 *
 	 * TODO: Support distinction between private and open payload field.
 	 */
-	if (!ieee802154_encrypt_auth(ctx, frame_type, frame, ll_hdr_len, payload_len,
+	if (!ieee802154_encrypt_auth(ctx, frame_type, frame, ll_hdr_len + hdr_ies_len, payload_len,
 				     authtag_len, src_addr, fcf->src_addr_mode,
 				     frame_counter_or_asn)) {
 		NET_DBG("Outgoing security procedure failed: Security error.");
@@ -1467,8 +1485,8 @@ out:
 
 bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame_type,
 				       int frame_version, struct ieee802154_frame_params *params,
-				       uint8_t *seq, struct net_buf *buf, uint8_t ll_hdr_len,
-				       uint8_t authtag_len)
+				       uint8_t *seq, struct net_buf *buf, bool ie_present,
+				       uint8_t ll_hdr_len, uint8_t hdr_ies_len, uint8_t authtag_len)
 {
 	struct ieee802154_address *src_addr;
 	struct ieee802154_fcf *fcf;
@@ -1485,8 +1503,8 @@ bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame
 	__ASSERT_NO_MSG(buf->len <= IEEE802154_MTU);
 	remaining_length = buf->len;
 
-	__ASSERT_NO_MSG(buf->len >= ll_hdr_len + authtag_len);
-	payload_len = remaining_length - ll_hdr_len - authtag_len;
+	__ASSERT_NO_MSG(remaining_length >= ll_hdr_len + authtag_len + hdr_ies_len);
+	payload_len = remaining_length - ll_hdr_len - hdr_ies_len - authtag_len;
 
 	k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
@@ -1494,7 +1512,7 @@ bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame
 	initialize_generic_frame_fcf(ctx, frame_type, frame_version, params, fcf);
 
 	progress = write_fcf_and_seq(cursor, frame_type, seq, ctx->sequence_number_suppression,
-				     params);
+				     ie_present, params);
 	if (!advance_cursor(progress, &cursor, &remaining_length)) {
 		goto release_ctx;
 	}
@@ -1507,17 +1525,24 @@ bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
 	uint64_t frame_counter_or_asn = IEEE802154_TSCH_MODE_ON(ctx) ? IEEE802154_TSCH_ASN(ctx)
 								     : ctx->sec_ctx.frame_counter;
-	progress = outgoing_security_procedure(cursor, ctx, frame_type, start, fcf, payload_len,
-					       authtag_len, src_addr, frame_counter_or_asn);
+
+	progress = outgoing_security_procedure(cursor, ctx, frame_type, start, fcf, hdr_ies_len,
+					       payload_len, authtag_len, src_addr,
+					       frame_counter_or_asn);
 	if (!advance_cursor(progress, &cursor, &remaining_length)) {
 		goto release_ctx;
 	}
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
 
-	if ((cursor - start) != ll_hdr_len) {
-		/* ll_hdr_len was too small? We probably overwrote payload bytes. */
+	progress = hdr_ies_len;
+	if (!advance_cursor(progress, &cursor, &remaining_length)) {
+		goto release_ctx;
+	}
+
+	if ((cursor - start) != ll_hdr_len + hdr_ies_len) {
+		/* ll_hdr_len or hdr_ies_len were too small? We probably overwrote payload bytes. */
 		NET_ERR("Could not generate data frame header, header length mismatch %zu vs %u",
-			(cursor - start), ll_hdr_len);
+			(cursor - start), ll_hdr_len + hdr_ies_len);
 		goto release_ctx;
 	}
 
@@ -1795,7 +1820,7 @@ struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee8
 
 
 	progress = write_fcf_and_seq(cursor, IEEE802154_FRAME_TYPE_MAC_COMMAND, &ctx->sequence,
-				     ctx->sequence_number_suppression, params);
+				     ctx->sequence_number_suppression, false, params);
 	if (!advance_cursor(progress, &cursor, &remaining_length)) {
 		goto release_pkt;
 	}
@@ -1858,7 +1883,7 @@ struct net_pkt *ieee802154_create_imm_ack_frame(struct net_if *iface, uint8_t se
 	fcf->dst_addr_mode = IEEE802154_ADDR_MODE_NONE;
 	fcf->src_addr_mode = IEEE802154_ADDR_MODE_NONE;
 
-	progress = write_fcf_and_seq(cursor, IEEE802154_FRAME_TYPE_ACK, &seq, false, NULL);
+	progress = write_fcf_and_seq(cursor, IEEE802154_FRAME_TYPE_ACK, &seq, false, false, NULL);
 	if (!advance_cursor(progress, &cursor, &remaining_length) || remaining_length != 0) {
 		goto release_pkt;
 	}
@@ -1871,4 +1896,342 @@ release_pkt:
 	net_pkt_unref(pkt);
 	return NULL;
 }
-	struct ieee802154_address *src_addr;
+
+#ifdef CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+struct net_pkt *ieee802154_create_enh_ack_frame(struct net_if *iface, struct ieee802154_mpdu *mpdu,
+						bool is_ack, int16_t time_correction_us)
+{
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	uint8_t dst_addr[IEEE802154_EXT_ADDR_LENGTH]; /* big endian */
+	struct ieee802154_frame_params params = {0};
+	uint8_t ll_hdr_len = 0, authtag_len = 0;
+	struct ieee802154_address *src_addr; /* little endian */
+	struct net_linkaddr dst, src = {0};  /* big endian */
+	struct net_pkt *pkt = NULL;
+	bool tsch_mode = false;
+	uint8_t header_ies_len;
+	struct net_buf *frame;
+	size_t frame_length;
+	uint8_t *start;
+
+	if (!mpdu->mhr.src_addr) {
+		goto out;
+	}
+
+	src_addr = mpdu->mhr.frame_control.has_src_pan ? &mpdu->mhr.src_addr->plain.addr
+						       : &mpdu->mhr.src_addr->comp.addr;
+
+	/* See section 7.3.3, Enh-Ack: "The Destination Addressing Mode field shall
+	 * contain the value of the Source Addressing Mode field in the Frame Control
+	 * field of the frame that is being acknowledged."
+	 */
+	if (mpdu->mhr.frame_control.src_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
+		dst.len = IEEE802154_SHORT_ADDR_LENGTH;
+	} else if (mpdu->mhr.frame_control.src_addr_mode == IEEE802154_ADDR_MODE_EXTENDED) {
+		dst.len = IEEE802154_EXT_ADDR_LENGTH;
+	} else {
+		goto out;
+	}
+
+	/* See section 7.3.3, Enh-Ack: "The Destination Address field, when present,
+	 * shall contain the value of the Source Address field from the frame that is
+	 * being acknowledged."
+	 */
+	sys_memcpy_swap(dst_addr, src_addr, dst.len);
+	dst.addr = dst_addr;
+
+	/* See section 7.3.3, Enh-Ack: "The Source Addressing mode field shall be set
+	 * as appropriate for the address of the device transmitting the Enh-Ack frame.
+	 * [...] The Source Address field, when present, contains the address of the
+	 * device originating the Enh-Ack frame. The Source PAN ID field, when present,
+	 * contains the PAN ID corresponding to the device originating the Enh-Ack frame."
+	 *
+	 * This is the default behaviour when we're supplying an empty src L2 address
+	 * structure.
+	 */
+	if (ieee802154_get_data_frame_params(ctx, &dst, &src, IEEE802154_VERSION_802154, &params,
+					     &ll_hdr_len, &authtag_len)) {
+		goto out;
+	}
+
+	/* See section 7.3.3, Enh-Ack: "The Destination PAN ID, when present, contains
+	 * the value from the Source PAN ID field from the frame that is being acknowledged."
+	 *
+	 * We only send packages to our own PAN so this amounts to checking that the source
+	 * PAN equals our PAN.
+	 */
+	if (mpdu->mhr.frame_control.has_src_pan &&
+	    params.dst.pan_id != sys_le16_to_cpu(mpdu->mhr.src_addr->plain.pan_id)) {
+		goto out;
+	}
+
+	/* Currently we implement requirements for TSCH Enh-ACK only, this can easily
+	 * be made more generic if other enhanced beacon types are required,
+	 * see section 6.7.4.3.
+	 */
+	if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)) {
+		k_sem_take(&ctx->ctx_lock, K_FOREVER);
+		tsch_mode = IEEE802154_TSCH_MODE_ON(ctx);
+		k_sem_give(&ctx->ctx_lock);
+	}
+
+	header_ies_len = tsch_mode ? IEEE802154_TIME_CORRECTION_HEADER_IE_LEN : 0;
+
+	frame_length = ll_hdr_len + header_ies_len + authtag_len;
+
+	pkt = net_pkt_alloc_with_buffer(iface, frame_length, AF_UNSPEC, 0, BUF_TIMEOUT);
+	if (!pkt) {
+		goto out;
+	}
+
+	start = net_pkt_data(pkt);
+	frame = pkt->frags;
+
+	net_buf_add(frame, ll_hdr_len);
+
+	if (tsch_mode) {
+		ieee802154_write_time_correction_header_ie(frame, is_ack, time_correction_us);
+	}
+
+	if (net_buf_tail(pkt->frags) - start - ll_hdr_len != header_ies_len) {
+		NET_ERR("Invalid IE length: %u vs. %u", header_ies_len,
+			net_buf_tail(pkt->frags) - start - ll_hdr_len);
+		goto release_pkt;
+	}
+
+	net_buf_add(pkt->frags, authtag_len);
+
+	if (!ieee802154_write_mhr_and_security(ctx, IEEE802154_FRAME_TYPE_ACK,
+					       IEEE802154_VERSION_802154, &params,
+					       &mpdu->mhr.sequence, pkt->frags, header_ies_len > 0,
+					       ll_hdr_len, header_ies_len, authtag_len)) {
+		goto release_pkt;
+	}
+
+	goto out;
+
+release_pkt:
+	net_pkt_unref(pkt);
+	pkt = NULL;
+out:
+	return pkt;
+}
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+/**
+ * Count the number of advertised links in a slotframe.
+ *
+ * The given context must be locked while executing this function
+ * otherwise the operation is NOT atomic.
+ */
+static inline int
+ieee802154_get_num_advertised_links_in_slotframe(struct ieee802154_tsch_slotframe *slotframe)
+{
+	struct ieee802154_tsch_link *link;
+	int num_advertised_links = 0;
+
+	SYS_SFLIST_FOR_EACH_CONTAINER(&slotframe->link_table, link, sfnode) {
+		if (link->advertise) {
+			num_advertised_links++;
+		}
+	}
+
+	return num_advertised_links;
+}
+
+/**
+ * Count the number of advertised slotframes and links in the IEEE
+ * 802.15.4 L2 driver's context.
+ *
+ * The given context must be locked while executing this function
+ * otherwise the operation is NOT atomic.
+ */
+static inline void ieee802154_get_num_advertised_slotframes_and_links(
+	struct ieee802154_context *ctx, int *num_advertised_slotframes, int *num_advertised_links)
+{
+	struct ieee802154_tsch_slotframe *slotframe;
+	int num_slotframes = 0;
+	int num_links = 0;
+
+	SYS_SFLIST_FOR_EACH_CONTAINER(&ctx->tsch_slotframe_table, slotframe, sfnode) {
+		if (slotframe->advertise) {
+			num_slotframes++;
+			num_links += ieee802154_get_num_advertised_links_in_slotframe(slotframe);
+		}
+	}
+
+	*num_advertised_slotframes = num_slotframes;
+	*num_advertised_links = num_links;
+}
+#else
+static inline void ieee802154_get_num_advertised_slotframes_and_links(
+	struct ieee802154_context *ctx, int *num_advertised_slotframes, int *num_advertised_links)
+{
+	ARG_UNUSED(ctx);
+	ARG_UNUSED(num_advertised_slotframes);
+	ARG_UNUSED(num_advertised_links);
+}
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
+
+/**
+ * Implements (part of) the MLME-BEACON.request/confirm primitives, see sections 8.2.18.1/2.
+ */
+struct net_pkt *ieee802154_create_enh_beacon(struct net_if *iface, bool full)
+{
+	int num_advertised_slotframes = 0, num_advertised_links = 0, hopping_sequence_length = 0;
+	uint8_t header_ies_len = 0, payload_ies_len = 0, nested_ies_len = 0;
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_frame_params params = {0};
+	struct net_linkaddr dst = {0}, src = {0}; /* big endian */
+	uint8_t ll_hdr_len = 0, authtag_len = 0;
+	struct net_pkt *pkt = NULL;
+	uint16_t current_hop = 0;
+	bool tsch_mode = false;
+	struct net_buf *frame;
+	size_t frame_length;
+	uint8_t *start;
+
+	/* see section 6.3.4, "A device shall be permitted to transmit Beacon frames
+	 * only if macShortAddress is not equal to 0xffff."
+	 */
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+	if (ctx->short_addr == IEEE802154_SHORT_ADDRESS_NOT_ASSOCIATED) {
+		k_sem_give(&ctx->ctx_lock);
+		goto out;
+	}
+	k_sem_give(&ctx->ctx_lock);
+
+	if (ieee802154_get_data_frame_params(ctx, &dst, &src, IEEE802154_VERSION_802154, &params,
+					     &ll_hdr_len, &authtag_len)) {
+		goto out;
+	}
+
+	if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH) ||
+	    IS_ENABLED(CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT)) {
+		k_sem_take(&ctx->ctx_lock, K_FOREVER);
+		hopping_sequence_length = IEEE802154_HOPPING_SEQUENCE_LENGTH(ctx);
+		tsch_mode = IEEE802154_TSCH_MODE_ON(ctx);
+
+		if (tsch_mode) {
+			ieee802154_get_num_advertised_slotframes_and_links(
+				ctx, &num_advertised_slotframes, &num_advertised_links);
+			current_hop = IEEE802154_TSCH_ASN(ctx) % hopping_sequence_length;
+		}
+
+		k_sem_give(&ctx->ctx_lock);
+	}
+
+	/* Currently we implement requirements for TSCH beacons only, this can easily
+	 * be made more generic if other enhanced beacon types are required,
+	 * see section 6.3.4, table 6-3, macTschEnabled.
+	 */
+	if (tsch_mode) {
+		nested_ies_len += IEEE802154_TSCH_SYNCHRONIZATION_NESTED_IE_LEN +
+				  (full ? IEEE802154_FULL_TSCH_TIMESLOT_NESTED_IE_LEN
+					: IEEE802154_SHORTENED_TSCH_TIMESLOT_NESTED_IE_LEN) +
+				  IEEE802154_TSCH_SLOTFRAME_AND_LINK_NESTED_IE_LEN(
+					  num_advertised_slotframes, num_advertised_links);
+	}
+
+	if (hopping_sequence_length > 0) {
+		nested_ies_len += full ? IEEE802154_FULL_CHANNEL_HOPPING_NESTED_IE_LEN(
+						 hopping_sequence_length)
+				       : IEEE802154_SHORTENED_CHANNEL_HOPPING_NESTED_IE_LEN;
+	}
+
+	if (nested_ies_len > 0) {
+		header_ies_len = IEEE802154_HEADER_TERMINATION_1_HEADER_IE_LEN;
+		payload_ies_len = IEEE802154_MLME_PAYLOAD_IE_LEN(nested_ies_len);
+	}
+
+	frame_length = ll_hdr_len + header_ies_len + payload_ies_len + authtag_len;
+
+	/* If the length of the beacon frame exceeds aMaxPhyPacketSize (e.g., due to the
+	 * additional overhead required for security processing), the MAC sublayer shall discard
+	 * the beacon frame and issue the MLME-BEACON.confirm primitive with a Status of
+	 * FRAME_TOO_LONG, see section 8.2.18.1.
+	 */
+	if (frame_length > IEEE802154_MTU) {
+		NET_ERR("Frame too long");
+		goto out;
+	}
+
+	pkt = net_pkt_alloc_with_buffer(iface, frame_length, AF_UNSPEC, 0, BUF_TIMEOUT);
+	if (!pkt) {
+		goto out;
+	}
+
+	start = net_pkt_data(pkt);
+	frame = pkt->frags;
+
+	net_buf_add(frame, ll_hdr_len);
+
+	if (payload_ies_len > 0) {
+		/* See section 7.4.1, table 7-6: a Header Termination 1 IE is
+		 * required and a Payload Termination IE is optional if the frame
+		 * contains no header and payload but contains payload IEs
+		 */
+		ieee802154_write_header_termination_1_header_ie(frame);
+		ieee802154_write_mlme_payload_ie_header(frame, nested_ies_len);
+
+		k_sem_take(&ctx->ctx_lock, K_FOREVER);
+
+		if (tsch_mode) {
+			ieee802154_write_tsch_synchronization_nested_ie(frame, ctx);
+			ieee802154_write_tsch_slotframe_and_link_nested_ie(frame, ctx);
+			if (full) {
+				ieee802154_write_full_tsch_timeslot_nested_ie(frame, ctx);
+			} else {
+				ieee802154_write_shortened_tsch_timeslot_nested_ie(frame);
+			}
+		}
+
+		if (hopping_sequence_length > 0) {
+			if (full) {
+				ieee802154_write_full_channel_hopping_nested_ie(frame, iface,
+										current_hop);
+			} else {
+				ieee802154_write_shortened_channel_hopping_nested_ie(frame);
+			}
+		}
+
+		k_sem_give(&ctx->ctx_lock);
+	}
+
+	if (net_buf_tail(pkt->frags) - start - ll_hdr_len != header_ies_len + payload_ies_len) {
+		NET_ERR("Invalid IE length: %u vs. %u", header_ies_len + payload_ies_len,
+			net_buf_tail(pkt->frags) - start - ll_hdr_len);
+		goto release_pkt;
+	}
+
+	net_buf_add(pkt->frags, authtag_len);
+
+	/* TODO: If the Enhanced Beacon frame is sent in response to an Enhanced Beacon Request
+	 * command: — If a PAN ID is required, then the Destination PAN ID field is set to the
+	 * value of macPanId, and the Source PAN ID field is omitted. — The Destination Address
+	 * field shall contain the source address contained in the received Enhanced Beacon
+	 * Request command. — The PAN ID Compression field is set as defined in Table 7-2,
+	 * see section 7.3.1.2
+	 */
+
+	/* The Sequence Number field shall contain the current value of [...] macEbsn
+	 * if it is an Enhanced Beacon frame. Because a device may be sending both
+	 * Beacon frames and Enhanced Beacon frames, separate sequence numbers shall
+	 * be maintained, see section 7.3.1.2.
+	 */
+	if (!ieee802154_write_mhr_and_security(
+		    ctx, IEEE802154_FRAME_TYPE_BEACON, IEEE802154_VERSION_802154, &params,
+		    &ctx->enh_beacon_sequence, pkt->frags, payload_ies_len > 0, ll_hdr_len,
+		    header_ies_len, authtag_len)) {
+		goto release_pkt;
+	}
+
+	goto out;
+
+release_pkt:
+	net_pkt_unref(pkt);
+	pkt = NULL;
+out:
+	return pkt;
+}
+#endif /* CONFIG_NET_L2_IEEE802154_IE_SUPPORT */

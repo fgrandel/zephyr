@@ -392,7 +392,12 @@ struct ieee802154_context {
 	/** ACK lock, guards ack_* fields */
 	struct k_sem ack_lock;
 
+#ifdef CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+	uint8_t enh_beacon_sequence;
+	uint8_t tsch_join_metric;
+#endif /* CONFIG_NET_L2_IEEE802154_IE_SUPPORT */
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
+
 	/* see section 8.4.3.3.4 */
 	struct ieee802154_tsch_timeslot_template tsch_timeslot_template;
 	/* see section 8.4.3.3.2 */

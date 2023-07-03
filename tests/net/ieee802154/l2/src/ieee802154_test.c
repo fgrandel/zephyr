@@ -20,6 +20,7 @@ LOG_MODULE_REGISTER(net_ieee802154_test, LOG_LEVEL_DBG);
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/socket.h>
+#include <zephyr/sys/util.h>
 
 #include "net_private.h"
 #include <ieee802154_frame.h>
@@ -374,7 +375,6 @@ static struct net_pkt *get_data_pkt_with_ar(void)
 	return pkt;
 }
 
-#ifdef CONFIG_NET_SOCKETS
 static bool set_up_security(uint8_t security_level)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(net_iface);
@@ -437,6 +437,7 @@ static bool tear_down_security(void)
 	return true;
 }
 
+#ifdef CONFIG_NET_SOCKETS
 static int set_up_recv_socket(enum net_sock_type socket_type)
 {
 	struct sockaddr_ll socket_sll = {
@@ -608,7 +609,11 @@ static bool test_wait_for_ack(struct ieee802154_pkt_test *t)
 		goto release_tx_pkt;
 	}
 
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	one_ack_pkt = ieee802154_create_enh_ack_frame(net_iface, &mpdu, false, -587);
+#else
 	one_ack_pkt = ieee802154_create_imm_ack_frame(net_iface, mpdu.mhr.sequence);
+#endif
 	if (!one_ack_pkt) {
 		NET_ERR("*** Could not create ack frame.\n");
 		goto release_tx_pkt;
@@ -907,7 +912,7 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 
 	frame_result = ieee802154_write_mhr_and_security(
 		ctx, IEEE802154_FRAME_TYPE_DATA, frame_version, &params, &ctx->sequence, frame_buf,
-		ll_hdr_len, authtag_len);
+		false, ll_hdr_len, 0, authtag_len);
 
 	ctx->sequence_number_suppression = false;
 
@@ -1266,6 +1271,126 @@ out:
 }
 #endif /* CONFIG_NET_SOCKETS */
 
+static bool test_create_and_parse_enh_beacon(void)
+{
+	struct ieee802154_context *ctx = net_if_l2_data(net_iface);
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	uint8_t short_addr_be[] = {0x76, 0x98};
+	struct ieee802154_tsch_link link = {
+		.node_addr = {.addr = short_addr_be,
+			      .len = IEEE802154_SHORT_ADDR_LENGTH,
+			      .type = NET_LINK_IEEE802154},
+		.tx = true,
+		.advertising = true,
+		.advertise = true,
+	};
+	struct ieee802154_tsch_slotframe slotframe = {
+		.size = 17,
+		.advertise = true,
+	};
+#endif
+#ifdef CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
+	static uint16_t hopping_sequence_list[] = IEEE802154_CHANNEL_HOPPING_SEQUENCE_2_4_GHZ_16_16;
+	static struct ieee802154_hopping_sequence hopping_sequence = {
+		.list = hopping_sequence_list,
+		.length = ARRAY_SIZE(hopping_sequence_list),
+	};
+#endif
+	struct ieee802154_mpdu mpdu = {0};
+	struct net_pkt *pkt;
+	bool res = false;
+
+	NET_INFO("- Creating and parsing an authenticated enhanced beacon frame including IEs\n");
+
+	if (!set_up_security(IEEE802154_SECURITY_LEVEL_MIC_128)) {
+		goto out;
+	};
+
+	/* Only TSCH mode security currently supports short addresses. */
+	if (set_up_short_addr(net_iface, ctx,
+			      IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)
+				      ? MOCK_SHORT_ADDRESS
+				      : IEEE802154_NO_SHORT_ADDRESS_ASSIGNED)) {
+		goto reset_security;
+	}
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	if (net_mgmt(NET_REQUEST_IEEE802154_SET_TSCH_SLOTFRAME, net_iface, &slotframe,
+		     sizeof(void *))) {
+		NET_ERR("*** Failed to add slotframe\n");
+		goto reset_short_addr;
+	}
+
+	if (net_mgmt(NET_REQUEST_IEEE802154_SET_TSCH_LINK, net_iface, &link, sizeof(void *))) {
+		NET_ERR("*** Failed to add link\n");
+		goto reset_short_addr;
+	}
+
+	/* Do not actually start the TSCH thread just set the corresponding bit
+	 * in the context so that we cover IE generation in the enhanced beacon.
+	 */
+	ctx->tsch_mode = true;
+#endif
+
+#ifdef CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
+	if (net_mgmt(NET_REQUEST_IEEE802154_SET_HOPPING_SEQUENCE, net_iface, &hopping_sequence,
+		     sizeof(void *))) {
+		return -EINVAL;
+	}
+#endif
+
+	pkt = ieee802154_create_enh_beacon(net_iface, true);
+	if (!pkt) {
+		NET_ERR("*** Could not create enhanced beacon.\n");
+		goto reset_short_addr;
+	}
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	if (net_mgmt(NET_REQUEST_IEEE802154_DELETE_TSCH_LINK, net_iface, (void *)&link.handle,
+		     sizeof(link.handle))) {
+		NET_ERR("*** Failed to delete link configuration\n");
+		goto release_pkt;
+	}
+
+	if (net_mgmt(NET_REQUEST_IEEE802154_DELETE_TSCH_SLOTFRAME, net_iface,
+		     (void *)&slotframe.handle, sizeof(slotframe.handle))) {
+		NET_ERR("*** Failed to delete slotframe configuration\n");
+		goto release_pkt;
+	}
+#endif
+
+	pkt_hexdump(net_pkt_data(pkt), net_pkt_get_len(pkt));
+
+	if (!ieee802154_parse_mhr(pkt, &mpdu)) {
+		NET_ERR("*** Could not parse enhanced beacon header\n");
+		goto release_pkt;
+	}
+
+	if (!ieee802154_incoming_security_procedure(net_iface, pkt, &mpdu)) {
+		NET_ERR("*** Could not execute incoming security procedure\n");
+		goto release_pkt;
+	}
+
+	if (!ieee802154_parse_mac_payload(&mpdu)) {
+		NET_ERR("*** Could not parse enhanced beacon MAC payload\n");
+		goto release_pkt;
+	}
+
+	res = true;
+
+release_pkt:
+	net_pkt_unref(pkt);
+reset_short_addr:
+	tear_down_short_addr(net_iface, ctx);
+reset_security:
+	tear_down_security();
+out:
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	ctx->tsch_mode = false;
+#endif
+	return res;
+}
+
 static bool initialize_test_environment(void)
 {
 	const struct device *dev;
@@ -1400,6 +1525,15 @@ ZTEST(ieee802154_l2, test_convert_rssi)
 
 	zassert_true(ret, "IEEE 802.15.4 net_pkt RSSI value correctly converted between dBm and "
 			  "normalized value.");
+}
+
+ZTEST(ieee802154_l2, test_create_and_parse_enh_beacon_pkt)
+{
+	bool ret;
+
+	ret = test_create_and_parse_enh_beacon();
+
+	zassert_true(ret, "Beacon generated");
 }
 
 ZTEST_SUITE(ieee802154_l2, NULL, test_setup, NULL, NULL, test_teardown);

@@ -38,6 +38,11 @@ zephyr_library_sources_ifdef(
   )
 
 zephyr_library_sources_ifdef(
+  CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+  ieee802154_frame_ie.c
+  )
+
+zephyr_library_sources_ifdef(
   CONFIG_NET_L2_IEEE802154_TSCH
   ieee802154_nbr.c
   ieee802154_radio_tsch.c

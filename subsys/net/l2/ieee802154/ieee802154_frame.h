@@ -20,6 +20,10 @@
 #ifndef __IEEE802154_FRAME_H__
 #define __IEEE802154_FRAME_H__
 
+#ifdef CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+#include "ieee802154_frame_ie.h"
+#endif
+
 #include <zephyr/kernel.h>
 #include <zephyr/net/ieee802154.h>
 #include <zephyr/net/net_pkt.h>
@@ -491,6 +495,10 @@ struct ieee802154_mhr {
 	struct ieee802154_aux_security_hdr *aux_sec;
 #endif
 
+#ifdef CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+	struct ieee802154_header_ies header_ies; /* parsed header IEs */
+#endif
+
 	/* processed information from frame control field */
 	struct ieee802154_frame_control frame_control;
 
@@ -503,6 +511,9 @@ struct ieee802154_mhr {
  */
 struct ieee802154_mpdu {
 	struct ieee802154_mhr mhr; /* parsed header */
+#ifdef CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+	struct ieee802154_payload_ies payload_ies; /* parsed payload IEs */
+#endif
 	/* The following are pointers into the raw packet buffer */
 	union {
 		void *mac_payload;		  /* pointer to MAC payload including payload IEs */
@@ -600,7 +611,8 @@ bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt
  */
 bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame_type,
 				       int frame_version, struct ieee802154_frame_params *params,
-				       uint8_t *seq, struct net_buf *buf, uint8_t ll_hdr_len,
+				       uint8_t *seq, struct net_buf *buf, bool ie_present,
+				       uint8_t ll_hdr_len, uint8_t hdr_ies_len,
 				       uint8_t authtag_len);
 
 #ifdef CONFIG_NET_L2_IEEE802154_MGMT
@@ -616,5 +628,18 @@ struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee8
  * Create an IEEE 802.15.4-2006 immediate ACK frame.
  */
 struct net_pkt *ieee802154_create_imm_ack_frame(struct net_if *iface, uint8_t seq);
+
+#ifdef CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+/**
+ * Create an IEEE 802.15.4-2015ff enhanced ACK frame.
+ */
+struct net_pkt *ieee802154_create_enh_ack_frame(struct net_if *iface, struct ieee802154_mpdu *mpdu,
+						bool is_ack, int16_t time_correction_us);
+
+/**
+ * Create an IEEE 802.15.4-2015ff enhanced beacon frame.
+ */
+struct net_pkt *ieee802154_create_enh_beacon(struct net_if *iface, bool full);
+#endif
 
 #endif /* __IEEE802154_FRAME_H__ */

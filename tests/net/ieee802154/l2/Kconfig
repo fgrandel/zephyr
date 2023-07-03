@@ -5,6 +5,7 @@
 config IEEE802154_FAKE_DRIVER
 	bool "A fake driver for IEEE 802.15.4 L2 tests"
 	select NET_TIME_REFERENCE_CLOCK
+	select NET_L2_IEEE802154_IE_SUPPORT
 	default y
 
 source "Kconfig.zephyr"

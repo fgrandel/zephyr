@@ -71,7 +71,8 @@ static inline void pkt_hexdump(const char *title, struct net_pkt *pkt, bool in)
 #define pkt_hexdump(...)
 #endif /* CONFIG_NET_DEBUG_L2_IEEE802154_DISPLAY_PACKET */
 
-static inline void ieee802154_acknowledge(struct net_if *iface, struct ieee802154_mpdu *mpdu)
+static inline void ieee802154_acknowledge(struct net_if *iface, struct ieee802154_mpdu *mpdu,
+					  int16_t time_correction_us)
 {
 	struct net_pkt *pkt;
 
@@ -83,7 +84,20 @@ static inline void ieee802154_acknowledge(struct net_if *iface, struct ieee80215
 		return;
 	}
 
+#ifdef CONFIG_NET_L2_IEEE802154_IE_SUPPORT
+	/* If the frame version is 0b00 or 0b01, the MAC sublayer shall send an Imm-Ack frame.
+	 * If the frame version is 0b10, the MAC sublayer shall send an Enh-Ack frame,
+	 * see section 6.7.2.
+	 */
+	bool requires_enh_ack_frame =
+		mpdu->mhr.frame_control.frame_version == IEEE802154_VERSION_802154;
+
+	pkt = requires_enh_ack_frame
+		      ? ieee802154_create_enh_ack_frame(iface, mpdu, false, time_correction_us)
+		      : ieee802154_create_imm_ack_frame(iface, mpdu->mhr.sequence);
+#else
 	pkt = ieee802154_create_imm_ack_frame(iface, mpdu->mhr.sequence);
+#endif
 	if (pkt) {
 		/* ACK frames must not use the CSMA/CA procedure, see section 6.2.5.1. */
 		ieee802154_radio_tx(iface, IEEE802154_TX_MODE_DIRECT, pkt, pkt->buffer);
@@ -305,6 +319,7 @@ static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pk
 {
 	struct ieee802154_frame_control *frame_control;
 	struct ieee802154_mpdu mpdu = {0};
+	int16_t time_correction_us = 0;
 	enum net_verdict verdict;
 	size_t ll_hdr_len;
 	bool is_broadcast;
@@ -349,7 +364,7 @@ static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pk
 
 	/* Frames that are broadcast must not be acknowledged, see section 6.7.2. */
 	if (!is_broadcast) {
-		ieee802154_acknowledge(iface, &mpdu);
+		ieee802154_acknowledge(iface, &mpdu, time_correction_us);
 	}
 
 	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
@@ -496,7 +511,7 @@ static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 		if (!(send_raw ||
 		      ieee802154_write_mhr_and_security(
 			      ctx, IEEE802154_FRAME_TYPE_DATA, frame_version, &params,
-			      &ctx->sequence, frame_buf, ll_hdr_len, authtag_len))) {
+			      &ctx->sequence, frame_buf, false, ll_hdr_len, 0, authtag_len))) {
 			return -EINVAL;
 		}
 

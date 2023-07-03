@@ -322,12 +322,63 @@ static inline uint8_t ieee802154_header_ie_get_element_id(struct ieee802154_head
 	return (ie->element_id_high << 1U) | ie->element_id_low;
 }
 
+/**
+ * Parsed header IEs
+ *
+ * Pointers into the frame will be the main means to present
+ * parsed IEs.
+ *
+ * Where different versions of IEs exist, the version is indicated
+ * in the flag bitmap.
+ */
+struct ieee802154_header_ies {
+	struct ieee802154_header_ie_csl *csl;
+	struct ieee802154_header_ie_rit *rit;
+	struct ieee802154_header_ie_rendezvous_time *rendezvous_time;
+	struct ieee802154_header_ie_time_correction *time_correction;
+	uint32_t payload_ie_present: 1;       /* signals HT1 termination in the header */
+	uint32_t csl_with_rendezvous_time: 1; /* The CSL IE includes a rendezvous time. */
+	uint32_t _unused: 30;
+};
+
+/**
+ * Parse Header Information Elements.
+ *
+ * @param[in] start Pointer to the first byte in a buffer that encodes Header IEs.
+ * @param[in] remaining_length Number of (unparsed) bytes in the buffer.
+ * @param[out] header_ies Pointer to the structure that will contain the parsed Header IEs.
+ *
+ * @return 0 on success, a negative value otherwise
+ */
+int ieee802154_parse_header_ies(uint8_t *start, uint8_t remaining_length,
+				struct ieee802154_header_ies *header_ies);
+
 /** The length in bytes of a "Time Correction" header IE. */
 #define IEEE802154_TIME_CORRECTION_HEADER_IE_LEN                                                   \
 	(IEEE802154_HEADER_IE_HEADER_LENGTH + sizeof(struct ieee802154_header_ie_time_correction))
 
+/**
+ * Write a "Time Correction" Header IE to the given buffer.
+ *
+ * @param[in] frame Pointer to the frame buffer to which the IE is to be
+ * written.
+ * @param[in] is_nack whether the enhanced ACK frame containing this IE is a NACK
+ * @param[in] time_correction_us positive or negative time correction in the
+ * range from -2048 microseconds to +2047 microseconds
+ */
+void ieee802154_write_time_correction_header_ie(struct net_buf *frame, bool is_nack,
+						int16_t time_correction_us);
+
 /** The length in bytes of a "Header Termination 1" header IE. */
 #define IEEE802154_HEADER_TERMINATION_1_HEADER_IE_LEN IEEE802154_HEADER_IE_HEADER_LENGTH
+
+/**
+ * Write a "Header Termination 1" Header IE to the given buffer.
+ *
+ * @param[in] frame Pointer to the frame buffer to which the IE is to be
+ * written.
+ */
+void ieee802154_write_header_termination_1_header_ie(struct net_buf *frame);
 
 /**
  * @}

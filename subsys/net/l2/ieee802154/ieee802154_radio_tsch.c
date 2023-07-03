@@ -7,7 +7,7 @@
  */
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(net_ieee802154_tsch, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
+LOG_MODULE_DECLARE(net_ieee802154_tsch, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 
 #include "ieee802154_priv.h"
 #include "ieee802154_utils.h"
