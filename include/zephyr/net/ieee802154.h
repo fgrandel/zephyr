@@ -127,6 +127,18 @@ extern "C" {
 /** IEEE 802.15.4 maximum address length. */
 #define IEEE802154_MAX_ADDR_LENGTH	IEEE802154_EXT_ADDR_LENGTH
 
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+
+#define IEEE802154_TSCH_MODE_ON(ctx) ((ctx)->tsch_mode)
+#define IEEE802154_TSCH_ASN(ctx)     ((ctx)->tsch_asn)
+
+#else /* CONFIG_NET_L2_IEEE802154_TSCH */
+
+#define IEEE802154_TSCH_MODE_ON(ctx) (false && ctx)
+#define IEEE802154_TSCH_ASN(ctx)     (UINT64_C(0) && ctx)
+
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
+
 /**
  * A special channel value that symbolizes "all" channels or "any" channel -
  * depending on context.
@@ -209,6 +221,9 @@ enum ieee802154_device_role {
 	IEEE802154_DEVICE_ROLE_COORDINATOR,
 	IEEE802154_DEVICE_ROLE_PAN_COORDINATOR,
 };
+
+/** see section 8.4.3.3.1, table 8-96, macAsn */
+#define IEEE802154_TSCH_MAX_ASN UINT64_C(0xffffffffff)
 
 /** IEEE 802.15.4 L2 context. */
 struct ieee802154_context {
@@ -332,9 +347,18 @@ struct ieee802154_context {
 	 */
 	uint8_t device_role : 2;
 
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	/** see section 8.2.19.5, table 8-49, TschMode */
+	uint8_t tsch_mode: 1;
+
 	/** @cond INTERNAL_HIDDEN */
-	uint8_t _unused : 4;
+	uint8_t _unused: 3;
 	/** INTERNAL_HIDDEN @endcond */
+#else
+	/** @cond INTERNAL_HIDDEN */
+	uint8_t _unused: 4;
+	/** INTERNAL_HIDDEN @endcond */
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
 
 	/**
 	 * ACK requested flag, guarded by ack_lock
@@ -346,6 +370,11 @@ struct ieee802154_context {
 
 	/** ACK lock, guards ack_* fields */
 	struct k_sem ack_lock;
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	/* see section 8.4.3.3.1 */
+	uint64_t tsch_asn; /* in CPU byte order */
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
 
 	/**
 	 * @brief Context lock

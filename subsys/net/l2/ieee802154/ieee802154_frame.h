@@ -162,9 +162,13 @@ struct ieee802154_security_control_field {
 #ifdef CONFIG_LITTLE_ENDIAN
 	uint8_t security_level : 3;
 	uint8_t key_id_mode : 2;
-	uint8_t reserved : 3;
+	uint8_t frame_counter_suppression : 1;
+	uint8_t asn_in_nonce : 1;
+	uint8_t reserved : 1;
 #else
-	uint8_t reserved : 3;
+	uint8_t reserved : 1;
+	uint8_t asn_in_nonce : 1;
+	uint8_t frame_counter_suppression : 1;
 	uint8_t key_id_mode : 2;
 	uint8_t security_level : 3;
 #endif
@@ -197,11 +201,28 @@ struct ieee802154_key_identifier_field {
 } __packed;
 
 /** Auxiliary Security Header, see section 9.4 */
-struct ieee802154_aux_security_hdr {
-	struct ieee802154_security_control_field control;
+struct ieee802154_aux_security_hdr_with_frame_counter {
 	uint32_t frame_counter;
 	struct ieee802154_key_identifier_field kif;
 } __packed;
+
+struct ieee802154_aux_security_hdr_without_frame_counter {
+	struct ieee802154_key_identifier_field kif;
+} __packed;
+
+struct ieee802154_aux_security_hdr {
+	struct ieee802154_security_control_field control;
+	union {
+		struct ieee802154_aux_security_hdr_with_frame_counter with_fc;
+		struct ieee802154_aux_security_hdr_without_frame_counter without_fc;
+	};
+} __packed;
+
+static inline struct ieee802154_key_identifier_field *
+ieee802154_key_identifier_field(struct ieee802154_aux_security_hdr *ash)
+{
+	return ash->control.frame_counter_suppression ? &ash->without_fc.kif : &ash->with_fc.kif;
+}
 
 #define IEEE802154_SECURITY_FRAME_COUNTER_LENGTH 4
 

@@ -23,42 +23,38 @@ void ieee802154_security_teardown_session(struct ieee802154_security_ctx *sec_ct
 /**
  * @brief Decrypt an authenticated payload.
  *
- * @param sec_ctx Pointer to an IEEE 802.15.4 security context.
+ * @param ctx Pointer to the IEEE 802.15.4 context.
  * @param frame_type The IEEE 802.15.4 frame type
  * @param frame Pointer to the frame data in original (little endian) byte order.
  * @param ll_hdr_len Length of the MHR.
  * @param payload_len Length of the MAC payload.
  * @param authtag_len Length of the authentication tag.
- * @param pan_id PAN ID in CPU byte order.
  * @param src_addr Pointer to the source address of the frame (in little endian byte order).
  * @param src_addr_mode The source address mode (short vs. extended)
- * @param frame_counter Frame counter in CPU byte order.
+ * @param frame_counter_or_asn Frame counter or ASN (in TSCH mode) in CPU byte order.
  */
-bool ieee802154_decrypt_auth(struct ieee802154_security_ctx *sec_ctx, int frame_type,
-			     uint8_t *frame, uint8_t ll_hdr_len, uint8_t payload_len,
-			     uint8_t authtag_len, uint16_t pan_id,
+bool ieee802154_decrypt_auth(struct ieee802154_context *ctx, int frame_type, uint8_t *frame,
+			     uint8_t ll_hdr_len, uint8_t payload_len, uint8_t authtag_len,
 			     struct ieee802154_address *src_addr, int src_addr_mode,
-			     uint32_t frame_counter);
+			     uint64_t frame_counter_or_asn);
 
 /**
  * @brief Encrypt an authenticated payload.
  *
- * @param sec_ctx Pointer to an IEEE 802.15.4 security context.
+ * @param ctx Pointer to the IEEE 802.15.4 context.
  * @param frame_type The IEEE 802.15.4 frame type
  * @param frame Pointer to the frame data in original (little endian) byte order.
  * @param ll_hdr_len Length of the MHR.
  * @param payload_len Length of the MAC payload.
  * @param authtag_len Length of the authentication tag.
- * @param pan_id PAN ID in CPU byte order.
  * @param src_addr Pointer to the source address of the frame (in little endian byte order).
  * @param src_addr_mode The source address mode (short vs. extended)
- * @param frame_counter Frame counter in CPU byte order.
+ * @param frame_counter_or_asn Frame counter or ASN (in TSCH mode) in CPU byte order.
  */
-bool ieee802154_encrypt_auth(struct ieee802154_security_ctx *sec_ctx, int frame_type,
-			     uint8_t *frame, uint8_t ll_hdr_len, uint8_t payload_len,
-			     uint8_t authtag_len, uint16_t pan_id,
+bool ieee802154_encrypt_auth(struct ieee802154_context *ctx, int frame_type, uint8_t *frame,
+			     uint8_t ll_hdr_len, uint8_t payload_len, uint8_t authtag_len,
 			     struct ieee802154_address *src_addr, int src_addr_mode,
-			     uint32_t frame_counter);
+			     uint64_t frame_counter_or_asn);
 
 int ieee802154_security_init(struct ieee802154_security_ctx *sec_ctx);
 

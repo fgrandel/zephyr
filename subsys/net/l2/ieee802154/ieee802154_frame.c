@@ -349,9 +349,13 @@ static int ieee802154_parse_aux_security_hdr(uint8_t *start, uint8_t remaining_l
 					     struct ieee802154_aux_security_hdr **aux_hdr)
 {
 	struct ieee802154_aux_security_hdr *ash = (struct ieee802154_aux_security_hdr *)start;
+	struct ieee802154_key_identifier_field *kif;
 	int len;
 
-	len = IEEE802154_SECURITY_CF_LENGTH + IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
+	len = IEEE802154_SECURITY_CF_LENGTH;
+	if (ash->control.frame_counter_suppression == 0) {
+		len += IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
+	}
 
 	/* At least the asf is sized of: control field + (optionally) frame counter */
 	if (len > remaining_length) {
@@ -364,13 +368,14 @@ static int ieee802154_parse_aux_security_hdr(uint8_t *start, uint8_t remaining_l
 	}
 
 	/* Explicit key must have a key index != 0x00, see section 9.4.2.3 */
+	kif = ieee802154_key_identifier_field(ash);
 	switch (ash->control.key_id_mode) {
 	case IEEE802154_KEY_ID_MODE_IMPLICIT:
 		break;
 	case IEEE802154_KEY_ID_MODE_INDEX:
 		len += IEEE802154_KEY_ID_FIELD_INDEX_LENGTH;
 
-		if (!ash->kif.mode_1.key_index) {
+		if (!kif->mode_1.key_index) {
 			return -EINVAL;
 		}
 
@@ -378,7 +383,7 @@ static int ieee802154_parse_aux_security_hdr(uint8_t *start, uint8_t remaining_l
 	case IEEE802154_KEY_ID_MODE_SRC_4_INDEX:
 		len += IEEE802154_KEY_ID_FIELD_SRC_4_INDEX_LENGTH;
 
-		if (!ash->kif.mode_2.key_index) {
+		if (!kif->mode_2.key_index) {
 			return -EINVAL;
 		}
 
@@ -386,7 +391,7 @@ static int ieee802154_parse_aux_security_hdr(uint8_t *start, uint8_t remaining_l
 	case IEEE802154_KEY_ID_MODE_SRC_8_INDEX:
 		len += IEEE802154_KEY_ID_FIELD_SRC_8_INDEX_LENGTH;
 
-		if (!ash->kif.mode_3.key_index) {
+		if (!kif->mode_3.key_index) {
 			return -EINVAL;
 		}
 
@@ -947,7 +952,11 @@ static uint8_t ieee802154_compute_header_size(struct ieee802154_context *ctx, in
 	__ASSERT_NO_MSG(sec_ctx->level != IEEE802154_SECURITY_LEVEL_NONE);
 
 	/* Compute aux-sec hdr size and add it to ll_hdr_len */
-	ll_hdr_len += IEEE802154_SECURITY_CF_LENGTH + IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
+	ll_hdr_len += IEEE802154_SECURITY_CF_LENGTH;
+
+	if (!IEEE802154_TSCH_MODE_ON(ctx)) {
+		ll_hdr_len += IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
+	}
 
 	switch (sec_ctx->key_mode) {
 	case IEEE802154_KEY_ID_MODE_IMPLICIT:
@@ -1213,7 +1222,8 @@ out:
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
 /* context must be locked */
-static int write_aux_security_hdr(uint8_t *start, struct ieee802154_security_ctx *sec_ctx)
+static int write_aux_security_hdr(uint8_t *start, struct ieee802154_security_ctx *sec_ctx,
+				  bool tsch_mode)
 {
 	struct ieee802154_aux_security_hdr *aux_sec;
 	int progress = 0;
@@ -1231,24 +1241,31 @@ static int write_aux_security_hdr(uint8_t *start, struct ieee802154_security_ctx
 
 	aux_sec->control.security_level = sec_ctx->level;
 	aux_sec->control.key_id_mode = sec_ctx->key_mode;
+	aux_sec->control.frame_counter_suppression = tsch_mode;
+	aux_sec->control.asn_in_nonce = tsch_mode;
 	aux_sec->control.reserved = 0U;
 	progress += IEEE802154_SECURITY_CF_LENGTH;
 
-	aux_sec->frame_counter = sys_cpu_to_le32(sec_ctx->frame_counter);
-	progress += IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
+	if (!tsch_mode) {
+		aux_sec->with_fc.frame_counter = sys_cpu_to_le32(sec_ctx->frame_counter);
+		progress += IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
+	}
 
 	return progress;
 }
 
 /* context must be locked */
-static int outgoing_security_procedure(uint8_t *cursor, struct ieee802154_security_ctx *sec_ctx,
+static int outgoing_security_procedure(uint8_t *cursor, struct ieee802154_context *ctx,
 				       int frame_type, uint8_t *frame, struct ieee802154_fcf *fcf,
-				       uint8_t payload_len, uint8_t authtag_len, uint16_t pan_id,
-				       struct ieee802154_address *src_addr, uint32_t frame_counter)
+				       uint8_t payload_len, uint8_t authtag_len,
+				       struct ieee802154_address *src_addr,
+				       uint64_t frame_counter_or_asn)
 {
+	struct ieee802154_security_ctx *sec_ctx = &ctx->sec_ctx;
 	uint8_t ll_hdr_len = cursor - frame;
 	uint8_t level = sec_ctx->level;
 	int progress = 0;
+	bool tsch_mode;
 
 	/* Section 9.2.2: Outgoing frame security procedure
 	 *
@@ -1275,20 +1292,26 @@ static int outgoing_security_procedure(uint8_t *cursor, struct ieee802154_securi
 		return -ENOTSUP;
 	}
 
+	/* TODO: When in TSCH mode, [...] security of the Enh-Ack frame shall match that of the
+	 * incoming frame, see section 6.7.4.3.
+	 */
 	fcf->security_enabled = 1U;
+
+	/* Get TSCH mode once atomically. */
+	tsch_mode = IEEE802154_TSCH_MODE_ON(ctx);
 
 	/* d) Check frame counter value.
 	 *    1) TODO: - implement. Currently we do not have key specific frame counters.
-	 *    2) If the secKeyFrameCounter [...] is set to 0xffffffff, the procedure shall
-	 *       return with a Status of COUNTER_ERROR.
+	 *    2) If TSCH mode is not being used [...] and the secKeyFrameCounter [...] is set to
+	 *       0xffffffff, the procedure shall return with a Status of COUNTER_ERROR.
 	 */
-	if (frame_counter == 0xffffffff) {
+	if (!tsch_mode && frame_counter_or_asn == 0xffffffff) {
 		NET_DBG("Outgoing security procedure failed: Counter error.");
 		return -EINVAL;
 	}
 
 	/* e) Insert Auxiliary Security Header field. */
-	progress = write_aux_security_hdr(cursor, sec_ctx);
+	progress = write_aux_security_hdr(cursor, sec_ctx, tsch_mode);
 	if (progress < 0) {
 		NET_DBG("Unsupported key mode.");
 		return progress;
@@ -1299,15 +1322,17 @@ static int outgoing_security_procedure(uint8_t *cursor, struct ieee802154_securi
 	 *
 	 * TODO: Support distinction between private and open payload field.
 	 */
-	if (!ieee802154_encrypt_auth(sec_ctx, frame_type, frame, ll_hdr_len, payload_len,
-				     authtag_len, pan_id, src_addr, fcf->src_addr_mode,
-				     frame_counter)) {
+	if (!ieee802154_encrypt_auth(ctx, frame_type, frame, ll_hdr_len, payload_len,
+				     authtag_len, src_addr, fcf->src_addr_mode,
+				     frame_counter_or_asn)) {
 		NET_DBG("Outgoing security procedure failed: Security error.");
 		return -EFAULT;
 	}
 
 	/* g) Store frame counter */
-	sec_ctx->frame_counter++;
+	if (!tsch_mode) {
+		sec_ctx->frame_counter++;
+	}
 
 	return progress;
 }
@@ -1319,8 +1344,8 @@ bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt
 	struct ieee802154_mhr *mhr = &mpdu->mhr;
 	struct ieee802154_address *src_addr;
 	uint8_t ll_hdr_len, authtag_len, level;
-	uint32_t frame_counter;
-	bool ret = false;
+	uint64_t frame_counter_or_asn;
+	bool ret = false, tsch_mode;
 
 	if (!mhr->frame_control.security_enabled) {
 		/* Section 9.2.5: Incoming frame security procedure, Security Enabled field is set
@@ -1382,6 +1407,23 @@ bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt
 		goto release_ctx;
 	}
 
+	/* Get TSCH mode once atomically. */
+	tsch_mode = IEEE802154_TSCH_MODE_ON(ctx);
+
+	if (tsch_mode) {
+		if (!(mhr->aux_sec->control.frame_counter_suppression &&
+		      mhr->aux_sec->control.asn_in_nonce)) {
+			NET_DBG("Incoming security procedure failed: Counter error.");
+			goto release_ctx;
+		}
+	} else {
+		if (mhr->aux_sec->control.frame_counter_suppression ||
+		    mhr->aux_sec->control.asn_in_nonce) {
+			NET_DBG("Incoming security procedure failed: Counter error.");
+			goto release_ctx;
+		}
+	}
+
 	/* i) Unsecure frame. [...] If the inverse transformation process fails, the procedure shall
 	 * return with a Status of SECURITY_ERROR.
 	 *
@@ -1397,11 +1439,11 @@ bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt
 						  : &mhr->src_addr->comp.addr;
 	mpdu->mac_payload_length -= authtag_len;
 
-	frame_counter = sys_le32_to_cpu(mhr->aux_sec->frame_counter);
-	if (!ieee802154_decrypt_auth(&ctx->sec_ctx, mhr->frame_control.frame_type,
-				     net_pkt_data(pkt), ll_hdr_len, mpdu->mac_payload_length,
-				     authtag_len, ctx->pan_id, src_addr,
-				     mhr->frame_control.src_addr_mode, frame_counter)) {
+	frame_counter_or_asn = tsch_mode ? IEEE802154_TSCH_ASN(ctx)
+					 : sys_le32_to_cpu(mhr->aux_sec->with_fc.frame_counter);
+	if (!ieee802154_decrypt_auth(ctx, mhr->frame_control.frame_type, net_pkt_data(pkt),
+				     ll_hdr_len, mpdu->mac_payload_length, authtag_len, src_addr,
+				     mhr->frame_control.src_addr_mode, frame_counter_or_asn)) {
 		NET_DBG("Incoming security procedure failed: Security error.");
 		goto release_ctx;
 	}
@@ -1463,10 +1505,10 @@ bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame
 	}
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-	uint32_t frame_counter = ctx->sec_ctx.frame_counter;
-	progress = outgoing_security_procedure(cursor, &ctx->sec_ctx, frame_type, start, fcf,
-					       payload_len, authtag_len, ctx->pan_id, src_addr,
-					       frame_counter);
+	uint64_t frame_counter_or_asn = IEEE802154_TSCH_MODE_ON(ctx) ? IEEE802154_TSCH_ASN(ctx)
+								     : ctx->sec_ctx.frame_counter;
+	progress = outgoing_security_procedure(cursor, ctx, frame_type, start, fcf, payload_len,
+					       authtag_len, src_addr, frame_counter_or_asn);
 	if (!advance_cursor(progress, &cursor, &remaining_length)) {
 		goto release_ctx;
 	}
