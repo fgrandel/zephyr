@@ -58,6 +58,18 @@ static inline int ieee802154_radio_set_channel(struct net_if *iface, uint16_t ch
 	return radio->set_channel(net_if_get_device(iface), channel);
 }
 
+static inline int ieee802154_radio_configure(struct net_if *iface, enum ieee802154_config_type type,
+					     struct ieee802154_config *config)
+{
+	const struct ieee802154_radio_api *radio = net_if_get_device(iface)->api;
+
+	if (!radio) {
+		return -ENOENT;
+	}
+
+	return radio->configure(net_if_get_device(iface), type, config);
+}
+
 static inline int ieee802154_radio_set_tx_power(struct net_if *iface, int16_t dbm)
 {
 	const struct ieee802154_radio_api *radio =

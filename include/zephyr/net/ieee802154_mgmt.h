@@ -16,6 +16,7 @@
 
 #include <zephyr/net/ieee802154.h>
 #include <zephyr/net/net_mgmt.h>
+#include <zephyr/sys/util_macro.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,6 +77,7 @@ enum net_request_ieee802154_cmd {
 	NET_REQUEST_IEEE802154_CMD_DELETE_TSCH_SLOTFRAME,
 	NET_REQUEST_IEEE802154_CMD_SET_TSCH_LINK,
 	NET_REQUEST_IEEE802154_CMD_DELETE_TSCH_LINK,
+	NET_REQUEST_IEEE802154_CMD_SET_HOPPING_SEQUENCE,
 };
 
 /**
@@ -307,6 +309,16 @@ NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_IEEE802154_DELETE_TSCH_LINK);
 
 #endif /* CONFIG_NET_L2_IEEE802154_TSCH */
 
+#ifdef CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
+
+/** MLME-SET(macHoppingSequence*) request */
+#define NET_REQUEST_IEEE802154_SET_HOPPING_SEQUENCE                                                \
+	(_NET_IEEE802154_BASE | NET_REQUEST_IEEE802154_CMD_SET_HOPPING_SEQUENCE)
+
+NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_HOPPING_SEQUENCE);
+
+#endif /* CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT */
+
 /**
  * @}
  */
@@ -353,11 +365,17 @@ enum net_event_ieee802154_cmd {
  */
 
 #define IEEE802154_IS_CHAN_SCANNED(_channel_set, _chan)	\
-	(_channel_set & BIT(_chan - 1))
+	(_channel_set & BIT(_chan))
 #define IEEE802154_IS_CHAN_UNSCANNED(_channel_set, _chan)	\
 	(!IEEE802154_IS_CHAN_SCANNED(_channel_set, _chan))
 
-#define IEEE802154_ALL_CHANNELS	UINT32_MAX
+#if defined(CONFIG_NET_L2_IEEE802154_TSCH) && defined(CONFIG_NET_CONFIG_SETTINGS)
+#define IEEE802154_ALL_CHANNELS                                                                    \
+	(BIT_MASK(CONFIG_NET_CONFIG_IEEE802154_CHANNEL_RANGE_FROM) &                               \
+	 ~BIT_MASK(CONFIG_NET_CONFIG_IEEE802154_CHANNEL_RANGE_TO + 1))
+#else
+#define IEEE802154_ALL_CHANNELS UINT32_MAX
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
 
 /**
  * INTERNAL_HIDDEN @endcond

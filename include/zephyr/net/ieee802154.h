@@ -127,6 +127,22 @@ extern "C" {
 /** IEEE 802.15.4 maximum address length. */
 #define IEEE802154_MAX_ADDR_LENGTH	IEEE802154_EXT_ADDR_LENGTH
 
+#ifdef CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
+
+#include <zephyr/net/ieee802154_channel_hopping.h>
+
+#define IEEE802154_HAS_HOPPING_SEQUENCE(ctx)      ((ctx)->hopping_sequence != NULL)
+#define IEEE802154_HOPPING_SEQUENCE_LENGTH(ctx)   ((ctx)->hopping_sequence->length)
+#define IEEE802154_HOPPING_SEQUENCE_ENTRY(ctx, i) ((ctx)->hopping_sequence->list[(i)])
+
+#else
+
+#define IEEE802154_HAS_HOPPING_SEQUENCE(ctx)      (false && ctx)
+#define IEEE802154_HOPPING_SEQUENCE_LENGTH(ctx)   (0 && ctx)
+#define IEEE802154_HOPPING_SEQUENCE_ENTRY(ctx, i) (UINT16_C(0) && ctx)
+
+#endif /* CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT */
+
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
 
 #include <zephyr/net/ieee802154_tsch.h>
@@ -381,6 +397,10 @@ struct ieee802154_context {
 
 	/* see section 8.4.3.3.1 */
 	uint64_t tsch_asn; /* in CPU byte order */
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
+#ifdef CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
+	/* see section 8.4.3.4 */
+	struct ieee802154_hopping_sequence *hopping_sequence;
 #endif /* CONFIG_NET_L2_IEEE802154_TSCH */
 
 	/**

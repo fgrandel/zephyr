@@ -172,11 +172,31 @@ config NET_CONFIG_IEEE802154_PAN_ID
 	  The PAN ID to use by default in the sample. In a TSCH network only the
 	  PAN coordinator may have a PAN ID initially set.
 
+if !NET_L2_IEEE802154_TSCH
 config NET_CONFIG_IEEE802154_CHANNEL
 	int "IEEE 802.15.4 channel"
 	default 26
 	help
 	  The channel to use by default in the sample application.
+endif
+
+if NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
+config NET_CONFIG_IEEE802154_CHANNEL_RANGE_FROM
+	int "First channel to be supported"
+	default 11
+	help
+	  The first channel to be used in channel hopping. Available channels
+	  depend on the channel page selected by the driver. The default assumes
+	  channel page zero, 2.4G O-QPSK.
+
+config NET_CONFIG_IEEE802154_CHANNEL_RANGE_TO
+	int "Last channel to be supported"
+	default 26
+	help
+	  The last channel to be used in channel hopping. Available channels
+	  depend on the channel page selected by the driver. The default assumes
+	  channel page zero, 2.4G O-QPSK.
+endif
 
 config NET_CONFIG_IEEE802154_RADIO_TX_POWER
 	int "IEEE 802.15.4 TX power in dbm"

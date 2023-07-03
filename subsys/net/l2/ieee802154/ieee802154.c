@@ -516,16 +516,37 @@ static int ieee802154_enable(struct net_if *iface, bool state)
 
 	NET_DBG("iface %p %s", iface, state ? "up" : "down");
 
-	k_sem_take(&ctx->ctx_lock, K_FOREVER);
-
-	if (ctx->channel == IEEE802154_NO_CHANNEL) {
-		k_sem_give(&ctx->ctx_lock);
-		return -ENETDOWN;
-	}
-
-	k_sem_give(&ctx->ctx_lock);
-
 	if (state) {
+		k_sem_take(&ctx->ctx_lock, K_FOREVER);
+
+		if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT)) {
+			struct ieee802154_config config;
+			int ret;
+
+			if (!IEEE802154_HAS_HOPPING_SEQUENCE(ctx) ||
+			    IEEE802154_HOPPING_SEQUENCE_LENGTH(ctx) == 0) {
+				NET_ERR("A hopping sequence must be configured before "
+					"enabling the network interface.");
+				k_sem_give(&ctx->ctx_lock);
+				return -ENETDOWN;
+			}
+
+			/* Ensure that RX remains off when starting the device. */
+			config = (struct ieee802154_config){
+				.rx_slot = {.start = IEEE802154_CONFIG_RX_SLOT_OFF}};
+
+			ret = ieee802154_radio_configure(iface, IEEE802154_CONFIG_RX_SLOT, &config);
+			if (ret) {
+				k_sem_give(&ctx->ctx_lock);
+				return ret;
+			}
+		} else if (ctx->channel == IEEE802154_NO_CHANNEL) {
+			k_sem_give(&ctx->ctx_lock);
+			return -ENETDOWN;
+		}
+
+		k_sem_give(&ctx->ctx_lock);
+
 		return ieee802154_radio_start(iface);
 	}
 

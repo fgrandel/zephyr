@@ -14,6 +14,11 @@ config NET_L2_IEEE802154_MGMT
 	select NET_MGMT
 	select NET_MGMT_EVENT
 
+# Virtual configuration option that can be chosen by features that require
+# IEEE 802.15.4-2015+ channel hopping.
+config NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
+	bool
+
 module = NET_L2_IEEE802154
 module-dep = NET_LOG
 module-str = Log level for IEEE 802.15.4
@@ -149,6 +154,7 @@ config NET_L2_IEEE802154_SECURITY_CRYPTO_DEV_NAME
 config NET_L2_IEEE802154_TSCH
 	bool "Start the IEEE 802.15.4 L2 in TSCH mode [EXPERIMENTAL]"
 	select EXPERIMENTAL
+	select NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
 	help
 	  Start the 802.15.4 L2 driver in TSCH (time slotted channel hopping)
 	  mode (MAC PIB attribute: macTschEnabled). This is EXPERIMENTAL work

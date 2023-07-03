@@ -711,6 +711,14 @@ static int ieee802154_set_parameters(uint32_t mgmt_request,
 	if (mgmt_request == NET_REQUEST_IEEE802154_SET_DEVICE_ROLE) {
 		ctx->device_role = value;
 	} else if (mgmt_request == NET_REQUEST_IEEE802154_SET_CHANNEL) {
+		if (IEEE802154_TSCH_MODE_ON(ctx)) {
+			NET_ERR(
+				"Cannot set channel while in TSCH mode as TSCH "
+				"implements automatic channel hopping.");
+			ret = -EBUSY;
+			goto out;
+		}
+
 		if (ctx->channel != value) {
 			if (!ieee802154_radio_verify_channel(iface, value)) {
 				ret = -EINVAL;
@@ -1074,5 +1082,31 @@ static int ieee802154_tsch_delete_link(uint32_t mgmt_request, struct net_if *ifa
 
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_DELETE_TSCH_LINK,
 				  ieee802154_tsch_delete_link);
-
 #endif /* CONFIG_NET_L2_IEEE802154_TSCH */
+
+#ifdef CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
+/* Currently hopping sequences are only used in the TSCH context but they can be
+ * used in other protocols, too, therefore no TSCH namespacing here.
+ */
+static int ieee802154_set_hopping_sequence(uint32_t mgmt_request, struct net_if *iface, void *data,
+					   size_t len)
+{
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_hopping_sequence *hopping_sequence;
+
+	if (len != sizeof(void *) || !data) {
+		return -EINVAL;
+	}
+
+	hopping_sequence = (struct ieee802154_hopping_sequence *)data;
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+	ctx->hopping_sequence = hopping_sequence;
+	k_sem_give(&ctx->ctx_lock);
+
+	return 0;
+}
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_HOPPING_SEQUENCE,
+				  ieee802154_set_hopping_sequence);
+#endif /* CONFIG_NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT */
