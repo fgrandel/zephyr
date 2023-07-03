@@ -779,12 +779,20 @@ bool ieee802154_filter(struct net_if *iface, struct ieee802154_mhr *mhr)
 		 * field are not included in the frame and macImplicitBroadcast is TRUE.
 		 */
 
-	} else {
-		/* TODO: d.4) The device is the PAN coordinator, only source addressing fields
-		 *       are included in a Data frame or MAC command and the source PAN ID
-		 *       matches macPanId.
+	} else if (ctx->device_role == IEEE802154_DEVICE_ROLE_PAN_COORDINATOR &&
+		   frame_control->dst_addr_mode == IEEE802154_ADDR_MODE_NONE &&
+		   (frame_control->src_addr_mode == IEEE802154_ADDR_MODE_SHORT ||
+		    frame_control->src_addr_mode == IEEE802154_ADDR_MODE_EXTENDED) &&
+		   (frame_control->frame_type == IEEE802154_FRAME_TYPE_DATA ||
+		    frame_control->frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) &&
+		   frame_control->has_src_pan &&
+		   mhr->src_addr->plain.pan_id == sys_cpu_to_le16(ctx->pan_id)) {
+		/* d.4) The device is the PAN coordinator, only source addressing fields
+		 * are included in a Data frame or MAC command and the source PAN ID
+		 * matches macPanId.
 		 */
 
+	} else {
 		/* d.5) not implemented - multipurpose frames are not supported */
 
 		goto out;

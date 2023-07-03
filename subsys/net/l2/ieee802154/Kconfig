@@ -64,27 +64,36 @@ config NET_L2_IEEE802154_ACK_REPLY
 	select DEPRECATED
 
 choice
-	prompt "Device features level support"
+	prompt "Device feature level"
 	default NET_L2_IEEE802154_RFD
 	help
-	  Select which features level you want on the device. Depending on it,
-	  the device might expose more or less 802.15.4 protocol features.
-	  Only RFD is supported for now.
+	  Select the IEEE 802.15.4 device feature level.
 
 config NET_L2_IEEE802154_RFD
-	bool "Support Reduced Functionality Device level"
-	select NET_L2_IEEE802154_MGMT
+	bool "Reduced Functionality Device (RFD)"
 	help
-	  This is the level for PAN device, not PAN coordinator. This will make
-	  possible to do active and/or passive scans, as well as associating
-	  and disassociating to/from a PAN. Current support is very fragile,
-	  thus it is not set as the default level.
+	  This is the level for an IEEE 802.15.4 end device with minimal
+	  resources that is neither a coordinator nor a PAN coordinator. This
+	  device profile only supports features required by all IEEE 802.15.4
+	  devices such as doing active or passive network scans, as well as
+	  associating and disassociating to/from a PAN.
+
+config NET_L2_IEEE802154_FFD
+	bool "Full Functionality Device (FFD) [EXPERIMENTAL]"
+	select EXPERIMENTAL
+	help
+	  This is the feature level required for a coordinator or PAN
+	  coordinator. A PAN coordinator is allowed to start a network and
+	  define network parameters. Both, coordinators and PAN coordinators may
+	  associate other devices and distribute short device addresses. Not all
+	  FFD features are implemented yet, therefore this option is
+	  EXPERIMENTAL.
 endchoice
 
 config NET_L2_IEEE802154_SHELL
 	bool "IEEE 802.15.4 shell module"
 	select SHELL
-	depends on NET_L2_IEEE802154_RFD
+	select NET_L2_IEEE802154_MGMT
 	help
 	  This can be used for testing 15.4 through the console via exposing
 	  a shell module named "ieee15_4".

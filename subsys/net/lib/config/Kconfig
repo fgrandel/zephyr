@@ -62,6 +62,7 @@ menuconfig NET_CONFIG_SETTINGS
 	bool "Set network settings for applications"
 	select NET_MGMT
 	select NET_MGMT_EVENT
+	select NET_L2_IEEE802154_MGMT if NET_L2_IEEE802154 || IEEE802154_RAW_MODE
 	help
 	  Allow IP addresses to be set in config file for
 	  networking client/server sample applications, or
