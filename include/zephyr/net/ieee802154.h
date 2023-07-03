@@ -129,6 +129,8 @@ extern "C" {
 
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
 
+#include <zephyr/net/ieee802154_tsch.h>
+
 #define IEEE802154_TSCH_MODE_ON(ctx) ((ctx)->tsch_mode)
 #define IEEE802154_TSCH_ASN(ctx)     ((ctx)->tsch_asn)
 
@@ -372,6 +374,9 @@ struct ieee802154_context {
 	struct k_sem ack_lock;
 
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	/* see section 8.4.3.3.2 */
+	sys_sflist_t tsch_slotframe_table;
+
 	/* see section 8.4.3.3.1 */
 	uint64_t tsch_asn; /* in CPU byte order */
 #endif /* CONFIG_NET_L2_IEEE802154_TSCH */

@@ -19,12 +19,16 @@ LOG_MODULE_REGISTER(net_ieee802154_mgmt, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #include <errno.h>
 
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_linkaddr.h>
 #include <zephyr/net/ieee802154_radio.h>
 #include <zephyr/net/ieee802154_mgmt.h>
 #include <zephyr/net/ieee802154.h>
 
+#include "nbr.h"
+
 #include "ieee802154_frame.h"
 #include "ieee802154_mgmt_priv.h"
+#include "ieee802154_nbr.h"
 #include "ieee802154_priv.h"
 #include "ieee802154_security.h"
 #include "ieee802154_utils.h"
@@ -918,3 +922,157 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_SECURITY_SETTINGS,
 				  ieee802154_get_security_settings);
 
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+
+static int ieee802154_tsch_set_slotframe(uint32_t mgmt_request, struct net_if *iface, void *data,
+					 size_t len)
+{
+	struct ieee802154_tsch_slotframe *added_or_updated_slotframe;
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+
+	/* TODO: If the device is in the middle of using a link in the slotframe that
+	 *       is being updated [...], the update shall be postponed until after the link
+	 *       operation completes either through a successful unacknowledged transmission,
+	 *       time-out for receipt of an expected acknowledgment, receipt of an invalid or
+	 *       unacknowledged frame, or transmission of an acknowledgment upon receipt of a
+	 *       valid frame, see section 8.2.19.1.
+	 */
+
+	if (len != sizeof(void *) || !data) {
+		return -EINVAL;
+	}
+
+	added_or_updated_slotframe = (struct ieee802154_tsch_slotframe *)data;
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+	ieee802154_ctx_tsch_set_slotframe(ctx, added_or_updated_slotframe);
+	k_sem_give(&ctx->ctx_lock);
+
+	return 0;
+}
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_TSCH_SLOTFRAME,
+				  ieee802154_tsch_set_slotframe);
+
+static int ieee802154_tsch_delete_slotframe(uint32_t mgmt_request, struct net_if *iface, void *data,
+					    size_t len)
+{
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	uint8_t slotframe_handle;
+
+	/* TODO: If the device is in the middle of using a link in the slotframe that
+	 *       is being [...] deleted, the update shall be postponed until after the link
+	 *       operation completes, see section 8.2.19.1.
+	 */
+
+	if (len != sizeof(uint8_t) || !data) {
+		return -EINVAL;
+	}
+
+	slotframe_handle = *((uint8_t *)data);
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+	ieee802154_ctx_tsch_delete_slotframe(ctx, slotframe_handle);
+	k_sem_give(&ctx->ctx_lock);
+
+	return 0;
+}
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_DELETE_TSCH_SLOTFRAME,
+				  ieee802154_tsch_delete_slotframe);
+
+static int ieee802154_tsch_set_link(uint32_t mgmt_request, struct net_if *iface, void *data,
+				    size_t len)
+{
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_tsch_link *added_or_updated_link;
+	struct net_nbr *nbr;
+	int ret = 0;
+
+	if (len != sizeof(void *) || !data) {
+		return -EINVAL;
+	}
+
+	added_or_updated_link = (struct ieee802154_tsch_link *)data;
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+
+	nbr = net_nbr_lookup(ieee802154_nbr_table_get(), iface, &added_or_updated_link->node_addr);
+	if (!nbr) {
+		struct ieee802154_nbr_data *nbr_data;
+
+		nbr = net_nbr_get(ieee802154_nbr_table_get());
+		if (!nbr) {
+			ret = -ENOMEM;
+			goto release;
+		}
+
+		nbr_data = ieee802154_nbr_data(nbr);
+		k_fifo_init(&nbr_data->tsch.tx_queue);
+
+		ret = net_nbr_link(nbr, iface, &added_or_updated_link->node_addr);
+		if (ret) {
+			net_nbr_unref(nbr);
+			goto release;
+		}
+	}
+
+
+	ieee802154_ctx_tsch_set_link(ctx, added_or_updated_link);
+
+ release:
+	k_sem_give(&ctx->ctx_lock);
+	return ret;
+}
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_TSCH_LINK, ieee802154_tsch_set_link);
+
+static int ieee802154_tsch_delete_link(uint32_t mgmt_request, struct net_if *iface, void *data,
+				       size_t len)
+{
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_tsch_link *deleted_link;
+	uint16_t link_handle;
+	struct net_nbr *nbr;
+	int ret = 0;
+
+	/* TODO: If the link is currently in use, the delete [...] operation shall be postponed
+	 * until the link operation completes, either through a successful unacknowledged
+	 * transmission, time-out for receipt of an expected acknowledgment, receipt of an invalid
+	 * or unacknowledged frame, or transmission of an acknowledgment upon receipt of a valid
+	 * frame, see section 8.2.19.4.
+	 */
+
+	if (len != sizeof(uint16_t) || !data) {
+		return -EINVAL;
+	}
+
+	link_handle = *((uint16_t *)data);
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+
+	deleted_link = ieee802154_ctx_tsch_delete_link(ctx, link_handle);
+	if (!deleted_link) {
+		ret = ENOENT;
+		goto release;
+	}
+
+	nbr = net_nbr_lookup(ieee802154_nbr_table_get(), iface, &deleted_link->node_addr);
+	if (!nbr) {
+		ret = ENOENT;
+		goto release;
+	}
+
+	net_nbr_unlink(nbr, &deleted_link->node_addr);
+	net_nbr_unref(nbr);
+
+ release:
+	k_sem_give(&ctx->ctx_lock);
+	return ret;
+}
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_DELETE_TSCH_LINK,
+				  ieee802154_tsch_delete_link);
+
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */

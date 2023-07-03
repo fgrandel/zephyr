@@ -15,6 +15,7 @@
 #define __IEEE802154_UTILS_H__
 
 #include <zephyr/net/ieee802154_radio.h>
+#include <zephyr/sys/sflist.h>
 #include <zephyr/sys/util_macro.h>
 
 /**
@@ -528,5 +529,62 @@ static inline uint32_t ieee802154_get_response_wait_time_us(struct net_if *iface
 	return IEEE802154_MAC_RESPONSE_WAIT_TIME_DEFAULT *
 	       ieee802154_get_a_base_superframe_duration(iface);
 }
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+/**
+ * @brief Add or replace a TSCH slotframe.
+ *
+ * @note Callers must hold the context lock while accessing this function.
+ *
+ * @param ctx pointer to the IEEE 802.15.4 context object
+ * @param slotframe pointer to the slotframe to be added or updated - must be
+ * valid as long as the slotframe is in the slotframe table
+ *
+ * @return pointer to the replaced slotframe if any, NULL otherwise.
+ */
+struct ieee802154_tsch_slotframe *
+ieee802154_ctx_tsch_set_slotframe(struct ieee802154_context *ctx,
+				  struct ieee802154_tsch_slotframe *slotframe);
+
+/**
+ * @brief Delete a TSCH slotframe.
+ *
+ * @note Callers must hold the context lock while accessing this function.
+ *
+ * @param ctx pointer to the IEEE 802.15.4 context object
+ * @param handle handle of the slotframe to be deleted
+ *
+ * @return pointer to the deleted slotframe if any, NULL otherwise.
+ */
+struct ieee802154_tsch_slotframe *
+ieee802154_ctx_tsch_delete_slotframe(struct ieee802154_context *ctx, uint8_t handle);
+
+/**
+ * @brief Add or replace a TSCH link.
+ *
+ * @note Callers must hold the context lock while accessing this function.
+ *
+ * @param ctx pointer to the IEEE 802.15.4 context object
+ * @param link pointer to the link to be added or updated - must be
+ * valid as long as the link is in the link table
+ *
+ * @return pointer to the replaced link if any, NULL otherwise.
+ */
+struct ieee802154_tsch_link *ieee802154_ctx_tsch_set_link(struct ieee802154_context *ctx,
+							  struct ieee802154_tsch_link *link);
+
+/**
+ * @brief Delete a TSCH link.
+ *
+ * @note Callers must hold the context lock while accessing this function.
+ *
+ * @param ctx pointer to the IEEE 802.15.4 context object
+ * @param handle handle of the link to be deleted
+ *
+ * @return pointer to the deleted link if any, NULL otherwise.
+ */
+struct ieee802154_tsch_link *ieee802154_ctx_tsch_delete_link(struct ieee802154_context *ctx,
+							     uint16_t handle);
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
 
 #endif /* __IEEE802154_UTILS_H__ */

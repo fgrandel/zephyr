@@ -19,6 +19,8 @@ LOG_MODULE_DECLARE(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
 
+#include <zephyr/net/ieee802154_tsch.h>
+
 #include "ieee802154_utils.h"
 
 #if defined(CONFIG_NET_CONFIG_IEEE802154_DEVICE_ROLE_PAN_COORDINATOR)
@@ -28,6 +30,28 @@ LOG_MODULE_DECLARE(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 #else
 #define NET_CONFIG_IEEE802154_DEVICE_ROLE IEEE802154_DEVICE_ROLE_ENDDEVICE
 #endif
+
+#define SLOTFRAME_HANDLE 0
+
+static struct ieee802154_tsch_slotframe slotframe = {
+	.handle = SLOTFRAME_HANDLE,
+	.size = 13, /* Prime so that overlapping links will not be shadowed. */
+};
+
+#define LINK_HANDLE 0
+
+static uint8_t broadcast_address_be[] = {0xff, 0xff};
+static struct ieee802154_tsch_link link = {
+	.handle = LINK_HANDLE,
+	.slotframe_handle = SLOTFRAME_HANDLE,
+	.timeslot = 0,
+	.node_addr = {.addr = broadcast_address_be,
+		      .len = IEEE802154_SHORT_ADDR_LENGTH,
+		      .type = NET_LINK_IEEE802154},
+	.tx = 1,
+	.advertising = 1, /* used to advertise the enhanced beacon */
+	.timekeeping = 1,
+};
 
 #else
 
@@ -82,6 +106,14 @@ int z_net_config_ieee802154_setup(struct net_if *iface)
 	} else {
 		short_addr = 0x0000;
 	}
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	if (net_mgmt(NET_REQUEST_IEEE802154_SET_TSCH_SLOTFRAME, iface, &slotframe,
+		     sizeof(void *)) ||
+	    net_mgmt(NET_REQUEST_IEEE802154_SET_TSCH_LINK, iface, &link, sizeof(void *))) {
+		return -EINVAL;
+	}
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
 
 	if (net_mgmt(NET_REQUEST_IEEE802154_SET_CHANNEL, iface, &channel, sizeof(uint16_t))) {
 		return -EINVAL;

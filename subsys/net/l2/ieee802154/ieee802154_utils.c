@@ -15,6 +15,9 @@
 LOG_MODULE_DECLARE(net_ieee802154, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 
 #include "ieee802154_utils.h"
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+#include <zephyr/net/ieee802154_tsch.h>
+#endif
 
 /**
  * PHY utilities
@@ -70,3 +73,131 @@ uint16_t ieee802154_radio_number_of_channels(struct net_if *iface)
 
 	return num_channels;
 }
+
+/**
+ * MAC utilities
+ */
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+static inline struct ieee802154_tsch_slotframe *
+get_slotframe_with_predecessor(struct ieee802154_context *ctx, uint8_t handle,
+			       struct ieee802154_tsch_slotframe **predecessor)
+{
+	struct ieee802154_tsch_slotframe *current;
+
+	*predecessor = NULL;
+
+	SYS_SFLIST_FOR_EACH_CONTAINER(&ctx->tsch_slotframe_table, current, sfnode) {
+		if (current->handle == handle) {
+			return current;
+		} else if (current->handle > handle) {
+			break;
+		}
+
+		*predecessor = current;
+	}
+
+	return NULL;
+}
+
+static inline struct ieee802154_tsch_slotframe *
+delete_slotframe_and_get_predecessor(struct ieee802154_context *ctx, uint8_t handle,
+				     struct ieee802154_tsch_slotframe **predecessor)
+{
+	struct ieee802154_tsch_slotframe *found =
+		get_slotframe_with_predecessor(ctx, handle, predecessor);
+
+	if (found) {
+		sys_sflist_remove(&ctx->tsch_slotframe_table, &(*predecessor)->sfnode,
+				  &found->sfnode);
+	}
+
+	return found;
+}
+
+static inline struct ieee802154_tsch_slotframe *get_slotframe(struct ieee802154_context *ctx,
+							      uint8_t handle)
+{
+	struct ieee802154_tsch_slotframe *predecessor;
+
+	return get_slotframe_with_predecessor(ctx, handle, &predecessor);
+}
+
+struct ieee802154_tsch_slotframe *
+ieee802154_ctx_tsch_delete_slotframe(struct ieee802154_context *ctx, uint8_t handle)
+{
+	struct ieee802154_tsch_slotframe *predecessor;
+
+	return delete_slotframe_and_get_predecessor(ctx, handle, &predecessor);
+}
+
+struct ieee802154_tsch_slotframe *
+ieee802154_ctx_tsch_set_slotframe(struct ieee802154_context *ctx,
+				  struct ieee802154_tsch_slotframe *slotframe)
+{
+	struct ieee802154_tsch_slotframe *replaced, *predecessor;
+
+	replaced = delete_slotframe_and_get_predecessor(ctx, slotframe->handle, &predecessor);
+	sys_sflist_insert(&ctx->tsch_slotframe_table, &predecessor->sfnode, &slotframe->sfnode);
+
+	return replaced;
+}
+
+struct ieee802154_tsch_link *ieee802154_ctx_tsch_delete_link(struct ieee802154_context *ctx,
+							     uint16_t handle)
+{
+	struct ieee802154_tsch_link *predecessor, *current;
+	struct ieee802154_tsch_slotframe *slotframe;
+
+	SYS_SFLIST_FOR_EACH_CONTAINER(&ctx->tsch_slotframe_table, slotframe, sfnode) {
+		predecessor = NULL;
+
+		SYS_SFLIST_FOR_EACH_CONTAINER(&slotframe->link_table, current, sfnode) {
+			if (current->handle == handle) {
+				sys_sflist_remove(&slotframe->link_table, &predecessor->sfnode,
+						  &current->sfnode);
+
+				/* Safe loop not needed as we leave the loop
+				 * after removing the node.
+				 */
+				return current;
+			}
+
+			predecessor = current;
+		}
+	}
+
+	return NULL;
+}
+
+struct ieee802154_tsch_link *ieee802154_ctx_tsch_set_link(struct ieee802154_context *ctx,
+							  struct ieee802154_tsch_link *link)
+{
+	struct ieee802154_tsch_link *replaced, *predecessor = NULL, *current;
+	struct ieee802154_tsch_slotframe *slotframe;
+
+	replaced = ieee802154_ctx_tsch_delete_link(ctx, link->handle);
+
+	slotframe = get_slotframe(ctx, link->slotframe_handle);
+	__ASSERT_NO_MSG(slotframe);
+
+	if (!slotframe) {
+		return NULL;
+	}
+
+	SYS_SFLIST_FOR_EACH_CONTAINER(&slotframe->link_table, current, sfnode) {
+		/* The list is sorted by timeslot and handle. */
+		if (current->timeslot > link->timeslot ||
+		    (current->timeslot == link->timeslot && current->handle > link->handle)) {
+			break;
+		}
+
+		predecessor = current;
+	}
+
+	/* Keep outside loop to support empty list case. */
+	sys_sflist_insert(&slotframe->link_table, &predecessor->sfnode, &link->sfnode);
+
+	return replaced;
+}
+#endif
