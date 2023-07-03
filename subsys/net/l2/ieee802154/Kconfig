@@ -137,6 +137,14 @@ config NET_L2_IEEE802154_SECURITY_CRYPTO_DEV_NAME
 	  IEEE 802.15.4 soft MAC will use to run authentication, encryption and
 	  decryption operations on incoming/outgoing frames.
 
+config NET_L2_IEEE802154_TSCH
+	bool "Start the IEEE 802.15.4 L2 in TSCH mode [EXPERIMENTAL]"
+	select EXPERIMENTAL
+	help
+	  Start the 802.15.4 L2 driver in TSCH (time slotted channel hopping)
+	  mode (MAC PIB attribute: macTschEnabled). This is EXPERIMENTAL work
+	  in progress.
+
 source "subsys/net/l2/ieee802154/Kconfig.radio"
 
 endif
