@@ -364,6 +364,9 @@ BUILD_ASSERT(
 /* It is assumed that this function is called while the context is not yet published. */
 void ieee802154_tsch_op_init(struct net_if *iface)
 {
+	/* TODO: Distinguish between TSCH data shared by all interfaces and
+	 *       interface-specific data.
+	 */
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	enum ieee802154_phy_channel_page channel_page;
 	bool is_subghz;
@@ -375,6 +378,7 @@ void ieee802154_tsch_op_init(struct net_if *iface)
 
 	/* see section 8.4.3.3.1, table 8-96 */
 	ctx->tsch_join_metric = 1U;
+	ctx->tsch_disconnect_time = 0xff;
 
 	channel_page = ieee802154_radio_current_channel_page(iface);
 	switch (channel_page) {

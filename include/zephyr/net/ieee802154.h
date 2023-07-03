@@ -397,6 +397,7 @@ struct ieee802154_context {
 	uint8_t tsch_join_metric;
 #endif /* CONFIG_NET_L2_IEEE802154_IE_SUPPORT */
 #ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	uint16_t tsch_disconnect_time;
 
 	/* see section 8.4.3.3.4 */
 	struct ieee802154_tsch_timeslot_template tsch_timeslot_template;
