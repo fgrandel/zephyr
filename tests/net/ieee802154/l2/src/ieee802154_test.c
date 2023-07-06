@@ -827,8 +827,11 @@ out:
 
 /* src_ll_addr is always big endian */
 static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_len,
-					uint32_t security_level, bool is_broadcast)
+					uint32_t security_level, bool sequence_number_suppression,
+					bool is_broadcast)
 {
+	int frame_version = sequence_number_suppression ? IEEE802154_VERSION_802154
+							: IEEE802154_VERSION_802154_2006;
 	struct ieee802154_context *ctx = net_if_l2_data(net_iface);
 	uint8_t our_ext_addr[IEEE802154_EXT_ADDR_LENGTH]; /* big endian */
 	uint8_t payload[] = {0x01, 0x02, 0x03, 0x04};
@@ -879,7 +882,7 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 	}
 
 	/* Temporarily set the ctx address to the given source address so
-	 * we can use ieee802154_get_frame_params() with it.
+	 * we can use ieee802154_data_get_frame_params() with it.
 	 */
 	if (src_ll_addr_len == IEEE802154_SHORT_ADDR_LENGTH) {
 		ctx->short_addr = ntohs(*(uint16_t *)src_ll_addr);
@@ -890,9 +893,10 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 		goto release_pkt;
 	}
 
+	ctx->sequence_number_suppression = sequence_number_suppression;
+
 	if (ieee802154_get_data_frame_params(ctx, net_pkt_lladdr_dst(pkt), net_pkt_lladdr_src(pkt),
-					     IEEE802154_VERSION_802154_2006, &params, &ll_hdr_len,
-					     &authtag_len)) {
+					     frame_version, &params, &ll_hdr_len, &authtag_len)) {
 		NET_ERR("*** Failed to get frame params.\n");
 		goto release_pkt;
 	}
@@ -901,9 +905,11 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 	net_buf_add_mem(frame_buf, payload, sizeof(payload));
 	net_buf_add(frame_buf, authtag_len);
 
-	frame_result = ieee802154_write_mhr_and_security(ctx, IEEE802154_FRAME_TYPE_DATA,
-							 IEEE802154_VERSION_802154_2006, &params,
-							 frame_buf, ll_hdr_len, authtag_len);
+	frame_result = ieee802154_write_mhr_and_security(
+		ctx, IEEE802154_FRAME_TYPE_DATA, frame_version, &params, &ctx->sequence, frame_buf,
+		ll_hdr_len, authtag_len);
+
+	ctx->sequence_number_suppression = false;
 
 	if (src_ll_addr_len == IEEE802154_SHORT_ADDR_LENGTH) {
 		ctx->short_addr = our_short_addr;
@@ -1425,7 +1431,7 @@ ZTEST(ieee802154_l2_sockets, test_receiving_broadcast_dgram_pkt)
 	bool ret;
 
 	ret = test_dgram_packet_reception(&src_short_addr, sizeof(src_short_addr),
-					  IEEE802154_SECURITY_LEVEL_NONE, true);
+					  IEEE802154_SECURITY_LEVEL_NONE, true, true);
 
 	zassert_true(ret, "Broadcast DGRAM packet received");
 }
@@ -1450,7 +1456,7 @@ ZTEST(ieee802154_l2_sockets, test_receiving_authenticated_dgram_pkt)
 	bool ret;
 
 	ret = test_dgram_packet_reception(src_ext_addr, sizeof(src_ext_addr),
-					  IEEE802154_SECURITY_LEVEL_MIC_128, false);
+					  IEEE802154_SECURITY_LEVEL_MIC_128, false, false);
 
 	zassert_true(ret, "Authenticated DGRAM packet received");
 }
@@ -1472,7 +1478,7 @@ ZTEST(ieee802154_l2_sockets, test_receiving_encrypted_and_authenticated_dgram_pk
 	bool ret;
 
 	ret = test_dgram_packet_reception(src_ext_addr, sizeof(src_ext_addr),
-					  IEEE802154_SECURITY_LEVEL_ENC_MIC_128, false);
+					  IEEE802154_SECURITY_LEVEL_ENC_MIC_128, false, false);
 
 	zassert_true(ret, "Encrypted and authenticated DGRAM packet received");
 }

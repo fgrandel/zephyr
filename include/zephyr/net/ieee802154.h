@@ -318,6 +318,7 @@ struct ieee802154_context {
 	 * MAC command, see section 8.4.3.1, table 8-94, macDsn.
 	 */
 	uint8_t sequence;
+	uint8_t sequence_number_suppression : 1;
 
 	/**
 	 * @brief Device Role
@@ -332,7 +333,7 @@ struct ieee802154_context {
 	uint8_t device_role : 2;
 
 	/** @cond INTERNAL_HIDDEN */
-	uint8_t _unused : 5;
+	uint8_t _unused : 4;
 	/** INTERNAL_HIDDEN @endcond */
 
 	/**

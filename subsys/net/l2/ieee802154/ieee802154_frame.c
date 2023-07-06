@@ -906,7 +906,8 @@ static uint8_t ieee802154_compute_header_size(struct ieee802154_context *ctx, in
 	uint8_t ll_hdr_len = 0;
 	bool pan_id_comp;
 
-	ll_hdr_len += IEEE802154_FCF_LENGTH + IEEE802154_SEQ_LENGTH;
+	ll_hdr_len += IEEE802154_FCF_LENGTH +
+		   (ctx->sequence_number_suppression ? 0 : IEEE802154_SEQ_LENGTH);
 
 	__ASSERT_NO_MSG(params->len != 0);
 	dst_addr_mode = params->dst.len == IEEE802154_SHORT_ADDR_LENGTH
@@ -1061,6 +1062,7 @@ release_ctx:
 
 /* context must be locked, requires addressing mode to already have been written */
 static inline int write_fcf_and_seq(uint8_t *start, int frame_type, uint8_t *seq,
+				    bool seq_num_suppr,
 				    struct ieee802154_frame_params *params)
 {
 	struct ieee802154_fcf *fcf = (struct ieee802154_fcf *)start;
@@ -1073,7 +1075,7 @@ static inline int write_fcf_and_seq(uint8_t *start, int frame_type, uint8_t *seq
 	fcf->security_enabled = false;
 	fcf->frame_pending = false;
 	fcf->reserved = 0U;
-	fcf->seq_num_suppr = 0U;
+	fcf->seq_num_suppr = seq_num_suppr;
 	fcf->ie_present = 0U;
 
 	if (!get_pan_id_comp(fcf->frame_version, fcf->dst_addr_mode, fcf->src_addr_mode, dst_pan_id,
@@ -1085,11 +1087,13 @@ static inline int write_fcf_and_seq(uint8_t *start, int frame_type, uint8_t *seq
 
 	cursor += IEEE802154_FCF_LENGTH;
 
-	*cursor = *seq;
-	cursor += IEEE802154_SEQ_LENGTH;
+	if (!fcf->seq_num_suppr) {
+		*cursor = *seq;
+		cursor += IEEE802154_SEQ_LENGTH;
 
-	if (frame_type != IEEE802154_FRAME_TYPE_ACK) {
-		(*seq)++;
+		if (frame_type != IEEE802154_FRAME_TYPE_ACK) {
+			(*seq)++;
+		}
 	}
 
 	return cursor - start;
@@ -1420,7 +1424,8 @@ out:
 
 bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame_type,
 				       int frame_version, struct ieee802154_frame_params *params,
-				       struct net_buf *buf, uint8_t ll_hdr_len, uint8_t authtag_len)
+				       uint8_t *seq, struct net_buf *buf, uint8_t ll_hdr_len,
+				       uint8_t authtag_len)
 {
 	struct ieee802154_address *src_addr;
 	struct ieee802154_fcf *fcf;
@@ -1429,7 +1434,6 @@ bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame
 	bool ret = false;
 	uint8_t *cursor;
 	uint8_t *start;
-	uint8_t *seq;
 	int progress;
 
 	start = buf->data;
@@ -1443,12 +1447,11 @@ bool ieee802154_write_mhr_and_security(struct ieee802154_context *ctx, int frame
 
 	k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
-	seq = &ctx->sequence;
-
 	fcf = (struct ieee802154_fcf *)cursor;
 	initialize_generic_frame_fcf(ctx, frame_type, frame_version, params, fcf);
 
-	progress = write_fcf_and_seq(cursor, frame_type, seq, params);
+	progress = write_fcf_and_seq(cursor, frame_type, seq, ctx->sequence_number_suppression,
+				     params);
 	if (!advance_cursor(progress, &cursor, &remaining_length)) {
 		goto release_ctx;
 	}
@@ -1498,10 +1501,12 @@ static inline bool initialize_cmd_frame_fcf(struct ieee802154_context *ctx, enum
 					    struct ieee802154_fcf *fcf)
 {
 	*fcf = (struct ieee802154_fcf){0};
-	fcf->frame_version = IEEE802154_VERSION_802154_2006;
-
+	fcf->frame_version = ctx->sequence_number_suppression ? IEEE802154_VERSION_802154
+							      : IEEE802154_VERSION_802154_2006;
 	switch (cfi) {
 	case IEEE802154_CFI_DISASSOCIATION_NOTIFICATION:
+		__ASSERT_NO_MSG(fcf->frame_version == IEEE802154_VERSION_802154_2006);
+
 		/* See section 7.5.4:
 		 *
 		 * The Frame Pending field shall be set to zero and ignored upon
@@ -1559,6 +1564,8 @@ static inline bool initialize_cmd_frame_fcf(struct ieee802154_context *ctx, enum
 
 		break;
 	case IEEE802154_CFI_ASSOCIATION_REQUEST:
+		__ASSERT_NO_MSG(fcf->frame_version == IEEE802154_VERSION_802154_2006);
+
 		/* The Frame Pending field shall be set to zero and ignored upon
 		 * reception, and the AR field shall be set to one.
 		 */
@@ -1601,6 +1608,8 @@ static inline bool initialize_cmd_frame_fcf(struct ieee802154_context *ctx, enum
 		break;
 	case IEEE802154_CFI_ASSOCIATION_RESPONSE:
 	case IEEE802154_CFI_PAN_ID_CONFLICT_NOTIFICATION:
+		__ASSERT_NO_MSG(fcf->frame_version == IEEE802154_VERSION_802154_2006);
+
 		/* See sections 7.5.4 and 7.5.6:
 		 *
 		 * The Frame Pending field shall be set to zero and ignored upon
@@ -1743,7 +1752,7 @@ struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee8
 
 
 	progress = write_fcf_and_seq(cursor, IEEE802154_FRAME_TYPE_MAC_COMMAND, &ctx->sequence,
-				     params);
+				     ctx->sequence_number_suppression, params);
 	if (!advance_cursor(progress, &cursor, &remaining_length)) {
 		goto release_pkt;
 	}
@@ -1806,7 +1815,7 @@ struct net_pkt *ieee802154_create_imm_ack_frame(struct net_if *iface, uint8_t se
 	fcf->dst_addr_mode = IEEE802154_ADDR_MODE_NONE;
 	fcf->src_addr_mode = IEEE802154_ADDR_MODE_NONE;
 
-	progress = write_fcf_and_seq(cursor, IEEE802154_FRAME_TYPE_ACK, &seq, NULL);
+	progress = write_fcf_and_seq(cursor, IEEE802154_FRAME_TYPE_ACK, &seq, false, NULL);
 	if (!advance_cursor(progress, &cursor, &remaining_length) || remaining_length != 0) {
 		goto release_pkt;
 	}

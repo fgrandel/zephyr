@@ -97,10 +97,17 @@ inline bool ieee802154_prepare_for_ack(struct net_if *iface, struct net_buf *fra
 	}
 
 	if (ack_required) {
+		struct ieee802154_fcf *fcf = (struct ieee802154_fcf *)frag->data;
 		struct ieee802154_context *ctx = net_if_l2_data(iface);
-		uint8_t ack_seq = *((uint8_t *)frag->data + IEEE802154_FCF_LENGTH);
 
-		ctx->ack_seq = ack_seq;
+		if (fcf->seq_num_suppr) {
+			ctx->ack_seq = 0;
+		} else {
+			uint8_t ack_seq = *((uint8_t *)frag->data + IEEE802154_FCF_LENGTH);
+
+			ctx->ack_seq = ack_seq;
+		}
+
 		if (k_sem_count_get(&ctx->ack_lock) == 1U) {
 			k_sem_take(&ctx->ack_lock, K_NO_WAIT);
 		}
@@ -387,6 +394,7 @@ static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 	static struct net_buf *frame_buf;
 	static struct net_buf *pkt_buf;
 	bool send_raw = false;
+	int frame_version;
 	int len;
 #ifdef CONFIG_NET_L2_IEEE802154_FRAGMENT
 	struct ieee802154_6lo_fragment_ctx frag_ctx;
@@ -424,10 +432,15 @@ static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 		}
 	}
 
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+	frame_version = ctx->sequence_number_suppression ? IEEE802154_VERSION_802154
+							 : IEEE802154_VERSION_802154_2006;
+	k_sem_give(&ctx->ctx_lock);
+
 	if (!send_raw) {
-		if (ieee802154_get_data_frame_params(
-			    ctx, net_pkt_lladdr_dst(pkt), net_pkt_lladdr_src(pkt),
-			    IEEE802154_VERSION_802154_2006, &params, &ll_hdr_len, &authtag_len)) {
+		if (ieee802154_get_data_frame_params(ctx, net_pkt_lladdr_dst(pkt),
+						     net_pkt_lladdr_src(pkt), frame_version,
+						     &params, &ll_hdr_len, &authtag_len)) {
 			return -EINVAL;
 		}
 
@@ -475,9 +488,9 @@ static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 		net_buf_add(frame_buf, authtag_len);
 
 		if (!(send_raw ||
-		      ieee802154_write_mhr_and_security(ctx, IEEE802154_FRAME_TYPE_DATA,
-							IEEE802154_VERSION_802154_2006, &params,
-							frame_buf, ll_hdr_len, authtag_len))) {
+		      ieee802154_write_mhr_and_security(
+			      ctx, IEEE802154_FRAME_TYPE_DATA, frame_version, &params,
+			      &ctx->sequence, frame_buf, ll_hdr_len, authtag_len))) {
 			return -EINVAL;
 		}
 
