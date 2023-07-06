@@ -262,17 +262,15 @@ ZTEST(ieee802154_l2_shell, test_associate)
 	memcpy(ctx->ext_addr, coord_addr_le, sizeof(ctx->ext_addr));
 	ctx->pan_id = EXPECTED_COORDINATOR_PAN_CPU_ORDER;
 
-	pkt = ieee802154_create_mac_cmd_frame(net_iface, IEEE802154_CFI_ASSOCIATION_RESPONSE,
-					      &params);
+	pkt = ieee802154_create_mac_cmd_frame(net_iface, IEEE802154_CFI_ASSOCIATION_RESPONSE, &params,
+					      &cmd);
 	if (!pkt) {
 		NET_ERR("*** Could not create association response\n");
 		goto fail;
 	}
 
-	cmd = ieee802154_get_mac_command(pkt);
 	cmd->assoc_res.short_addr = sys_cpu_to_le16(EXPECTED_ENDDEVICE_SHORT_ADDR);
 	cmd->assoc_res.status = IEEE802154_ASF_SUCCESSFUL;
-	ieee802154_mac_cmd_finalize(pkt, IEEE802154_CFI_ASSOCIATION_RESPONSE);
 
 	/* The packet will be placed in the RX queue but not yet handled. */
 	if (net_recv_data(net_iface, pkt) < 0) {
@@ -355,15 +353,13 @@ ZTEST(ieee802154_l2_shell, test_initiate_disassociation_from_coordinator)
 
 	/* Create and send an incoming disassociation notification. */
 	pkt = ieee802154_create_mac_cmd_frame(net_iface, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION,
-					      &params);
+					      &params, &cmd);
 	if (!pkt) {
 		NET_ERR("*** Could not create association response\n");
 		goto fail;
 	}
 
-	cmd = ieee802154_get_mac_command(pkt);
 	cmd->disassoc_note.reason = IEEE802154_DRF_COORDINATOR_WISH;
-	ieee802154_mac_cmd_finalize(pkt, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION);
 
 	/* Restore the end device's state and simulate an associated device. */
 	ctx->device_role = IEEE802154_DEVICE_ROLE_ENDDEVICE;

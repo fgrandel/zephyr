@@ -1051,8 +1051,7 @@ out:
 	return ret;
 }
 
-#ifdef CONFIG_NET_L2_IEEE802154_RFD
-
+#ifdef CONFIG_NET_L2_IEEE802154_MGMT
 /* context must be locked */
 static inline bool initialize_cmd_frame_fcf(struct ieee802154_context *ctx, enum ieee802154_cfi cfi,
 					    struct ieee802154_frame_params *params,
@@ -1246,7 +1245,7 @@ static inline bool initialize_cmd_frame_fcf(struct ieee802154_context *ctx, enum
 	return true;
 }
 
-static inline uint8_t mac_command_length(enum ieee802154_cfi cfi)
+static inline uint8_t get_mac_command_length(enum ieee802154_cfi cfi)
 {
 	uint8_t length = 1U; /* cfi is at least present */
 
@@ -1270,9 +1269,11 @@ static inline uint8_t mac_command_length(enum ieee802154_cfi cfi)
 }
 
 struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee802154_cfi cfi,
-						struct ieee802154_frame_params *params)
+						struct ieee802154_frame_params *params,
+						struct ieee802154_command **p_cmd)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_command *cmd;
 	struct ieee802154_fcf *fcf;
 	struct net_pkt *pkt = NULL;
 	uint8_t *p_buf, *p_start;
@@ -1307,10 +1308,16 @@ struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee8
 		goto error;
 	}
 
-	net_buf_add(pkt->buffer, p_buf - p_start);
+	cmd = ((struct ieee802154_command *)p_buf);
+	cmd->cfi = cfi;
 
-	/* Let's insert the cfi */
-	((struct ieee802154_command *)p_buf)->cfi = cfi;
+	if (p_cmd) {
+		*p_cmd = cmd;
+	}
+
+	p_buf += get_mac_command_length(cfi);
+
+	net_buf_add(pkt->buffer, p_buf - p_start);
 
 	dbg_print_fcf(fcf);
 
@@ -1324,13 +1331,7 @@ out:
 	k_sem_give(&ctx->ctx_lock);
 	return pkt;
 }
-
-void ieee802154_mac_cmd_finalize(struct net_pkt *pkt, enum ieee802154_cfi type)
-{
-	net_buf_add(pkt->buffer, mac_command_length(type));
-}
-
-#endif /* CONFIG_NET_L2_IEEE802154_RFD */
+#endif /* #ifdef CONFIG_NET_L2_IEEE802154_MGMT */
 
 bool ieee802154_create_imm_ack_frame(struct net_if *iface, struct net_pkt *pkt, uint8_t seq)
 {

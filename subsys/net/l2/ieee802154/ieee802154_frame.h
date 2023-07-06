@@ -535,15 +535,14 @@ bool ieee802154_create_data_frame(struct ieee802154_context *ctx,
 				  struct ieee802154_frame_params *params, struct net_buf *buf,
 				  uint8_t ll_hdr_len, uint8_t authtag_len);
 
+#ifdef CONFIG_NET_L2_IEEE802154_MGMT
+/**
+ * Create an IEEE 802.15.4-2006 MAC command frame.
+ */
 struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee802154_cfi type,
-						struct ieee802154_frame_params *params);
-
-void ieee802154_mac_cmd_finalize(struct net_pkt *pkt, enum ieee802154_cfi type);
-
-static inline struct ieee802154_command *ieee802154_get_mac_command(struct net_pkt *pkt)
-{
-	return (struct ieee802154_command *)(pkt->frags->data + pkt->frags->len);
-}
+						struct ieee802154_frame_params *params,
+						struct ieee802154_command **p_cmd);
+#endif
 
 /**
  * Create an IEEE 802.15.4-2006 immediate ACK frame.

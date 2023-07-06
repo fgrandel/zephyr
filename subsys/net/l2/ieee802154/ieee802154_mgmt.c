@@ -122,15 +122,13 @@ static int ieee802154_scan(uint32_t mgmt_request, struct net_if *iface,
 		struct ieee802154_frame_params params = {0};
 
 		pkt = ieee802154_create_mac_cmd_frame(
-			iface, IEEE802154_CFI_BEACON_REQUEST, &params);
+			iface, IEEE802154_CFI_BEACON_REQUEST, &params, NULL);
 		if (!pkt) {
 			k_sem_give(&ctx->scan_ctx_lock);
 			NET_DBG("Could not create Beacon Request");
 			ret = -ENOBUFS;
 			goto out;
 		}
-
-		ieee802154_mac_cmd_finalize(pkt, IEEE802154_CFI_BEACON_REQUEST);
 	}
 
 	ctx->scan_ctx = scan;
@@ -395,7 +393,6 @@ enum net_verdict ieee802154_handle_mac_command(struct net_if *iface,
 		 * Note: Unless the packet is authenticated, it cannot be verified
 		 *       that the command comes from the requested coordinator.
 		 */
-
 		if (mpdu->mhr.frame_control.src_addr_mode !=
 			    IEEE802154_ADDR_MODE_EXTENDED ||
 		    !mpdu->mhr.frame_control.ack_requested ||
@@ -478,15 +475,13 @@ static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
 	k_sem_give(&ctx->ctx_lock);
 
 	pkt = ieee802154_create_mac_cmd_frame(
-		iface, IEEE802154_CFI_ASSOCIATION_REQUEST, &params);
+		iface, IEEE802154_CFI_ASSOCIATION_REQUEST, &params, &cmd);
 	if (!pkt) {
 		ret = -ENOBUFS;
 		goto out;
 	}
 
 	k_sem_take(&ctx->ctx_lock, K_FOREVER);
-
-	cmd = ieee802154_get_mac_command(pkt);
 
 	cmd->assoc_req.ci.reserved_1 = 0U; /* Reserved */
 	cmd->assoc_req.ci.dev_type = 0U; /* RFD */
@@ -503,8 +498,6 @@ static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
 	 * TODO: support operation with ext addr.
 	 */
 	cmd->assoc_req.ci.alloc_addr = 1U;
-
-	ieee802154_mac_cmd_finalize(pkt, IEEE802154_CFI_ASSOCIATION_REQUEST);
 
 	/* section 6.4.1, Association: Set phyCurrentPage [TODO: implement] and
 	 * phyCurrentChannel to the requested channel and channel page
@@ -630,16 +623,12 @@ static int ieee802154_disassociate(uint32_t mgmt_request, struct net_if *iface,
 	 * shall send a Disassociation Notification command to its coordinator.
 	 */
 	pkt = ieee802154_create_mac_cmd_frame(
-		iface, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION, &params);
+		iface, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION, &params, &cmd);
 	if (!pkt) {
 		return -ENOBUFS;
 	}
 
-	cmd = ieee802154_get_mac_command(pkt);
 	cmd->disassoc_note.reason = IEEE802154_DRF_DEVICE_WISH;
-
-	ieee802154_mac_cmd_finalize(
-		pkt, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION);
 
 	if (ieee802154_radio_send(iface, pkt, pkt->buffer)) {
 		net_pkt_unref(pkt);
