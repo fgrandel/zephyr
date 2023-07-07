@@ -24,6 +24,7 @@ LOG_MODULE_REGISTER(net_ieee802154_mgmt_test, LOG_LEVEL_DBG);
 extern struct net_pkt *current_pkt;
 extern struct k_sem driver_lock;
 extern uint8_t mock_ext_addr_be[8];
+extern uint16_t mock_pan_id;
 
 static struct net_if *net_iface;
 
@@ -70,9 +71,9 @@ static void test_beacon_request(struct ieee802154_mpdu *mpdu)
 {
 	struct ieee802154_command *cmd = mpdu->command;
 
-	zassert_equal(mpdu->payload_length, 1U, "Beacon request: invalid payload length.");
+	zassert_equal(mpdu->mac_payload_length, 1U, "Beacon request: invalid payload length.");
 	zassert_equal(cmd->cfi, IEEE802154_CFI_BEACON_REQUEST, "Not a beacon request.");
-	zassert_equal(mpdu->mhr.fs->fc.dst_addr_mode, IEEE802154_ADDR_MODE_SHORT,
+	zassert_equal(mpdu->mhr.frame_control.dst_addr_mode, IEEE802154_ADDR_MODE_SHORT,
 		      "Beacon request: invalid destination address mode.");
 	zassert_equal(mpdu->mhr.dst_addr->plain.addr.short_addr, IEEE802154_BROADCAST_ADDRESS,
 		      "Beacon request: destination address should be broadcast address.");
@@ -85,12 +86,13 @@ static void test_association_request(struct ieee802154_mpdu *mpdu)
 	struct ieee802154_command *cmd = mpdu->command;
 
 	zassert_equal(
-		mpdu->mhr.fs->fc.frame_version, IEEE802154_VERSION_802154_2006,
+		mpdu->mhr.frame_control.frame_version, IEEE802154_VERSION_802154_2006,
 		"Association Request: currently only IEEE 802.15.4 2006 frame version supported.");
-	zassert_equal(mpdu->mhr.fs->fc.frame_type, IEEE802154_FRAME_TYPE_MAC_COMMAND,
+	zassert_equal(mpdu->mhr.frame_control.frame_type, IEEE802154_FRAME_TYPE_MAC_COMMAND,
 		      "Association Request: should be a MAC command.");
-	zassert_equal(mpdu->mhr.fs->fc.ar, true, "Association Request: must request ACK.");
-	zassert_equal(mpdu->payload_length, 1U + IEEE802154_CMD_ASSOC_REQ_LENGTH);
+	zassert_equal(mpdu->mhr.frame_control.ack_requested, true,
+		      "Association Request: must request ACK.");
+	zassert_equal(mpdu->mac_payload_length, 1U + IEEE802154_CMD_ASSOC_REQ_LENGTH);
 
 	zassert_equal(cmd->cfi, IEEE802154_CFI_ASSOCIATION_REQUEST,
 		      "Association Request: unexpected CFI.");
@@ -104,19 +106,42 @@ static void test_disassociation_notification(struct ieee802154_mpdu *mpdu)
 {
 	struct ieee802154_command *cmd = mpdu->command;
 
-	zassert_equal(mpdu->mhr.fs->fc.frame_version, IEEE802154_VERSION_802154_2006,
+	zassert_equal(mpdu->mhr.frame_control.frame_version, IEEE802154_VERSION_802154_2006,
 		      "Disassociation Notification: currently only IEEE 802.15.4 2006 frame "
 		      "version supported.");
-	zassert_equal(mpdu->mhr.fs->fc.frame_type, IEEE802154_FRAME_TYPE_MAC_COMMAND,
+	zassert_equal(mpdu->mhr.frame_control.frame_type, IEEE802154_FRAME_TYPE_MAC_COMMAND,
 		      "Disassociation Notification: should be a MAC command.");
-	zassert_equal(mpdu->mhr.fs->fc.ar, true, "Disassociation Notification: must request ACK.");
-	zassert_equal(mpdu->payload_length, 1U + IEEE802154_CMD_DISASSOC_NOTE_LENGTH);
+	zassert_equal(mpdu->mhr.frame_control.ack_requested, true,
+		      "Disassociation Notification: must request ACK.");
+	zassert_equal(mpdu->mac_payload_length, 1U + IEEE802154_CMD_DISASSOC_NOTE_LENGTH);
 
 	zassert_equal(cmd->cfi, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION,
 		      "Disassociation Notification: unexpected CFI.");
 	zassert_equal(
 		cmd->disassoc_note.reason, IEEE802154_DRF_DEVICE_WISH,
 		"Disassociation Notification: notification should be initiated by the enddevice.");
+}
+
+static void parse_frame(struct ieee802154_mpdu *mpdu)
+{
+	zassert_not_null(current_pkt);
+	zassert_not_null(current_pkt->frags);
+	zassert_is_null(current_pkt->frags->frags);
+
+	if (!ieee802154_parse_mhr(current_pkt, mpdu)) {
+		NET_ERR("*** Could not parse request header.\n");
+		ztest_test_fail();
+	}
+
+	if (!ieee802154_incoming_security_procedure(net_iface, current_pkt, mpdu)) {
+		NET_ERR("*** Beacon request does not pass incoming security procedure.\n");
+		ztest_test_fail();
+	}
+
+	if (!ieee802154_parse_mac_payload(mpdu)) {
+		NET_ERR("*** Could not parse request payload.\n");
+		ztest_test_fail();
+	}
 }
 
 static void test_scan_shell_cmd(void)
@@ -132,18 +157,9 @@ static void test_scan_shell_cmd(void)
 
 	zassert_equal(0, k_sem_take(&scan_lock, K_NO_WAIT), "Active scan: did not receive beacon.");
 
-	zassert_not_null(current_pkt);
-
-	if (!ieee802154_validate_frame(net_pkt_data(current_pkt), net_pkt_get_len(current_pkt),
-				       &mpdu)) {
-		NET_ERR("*** Could not parse beacon request.\n");
-		ztest_test_fail();
-		goto release_frag;
-	}
-
+	parse_frame(&mpdu);
 	test_beacon_request(&mpdu);
 
-release_frag:
 	net_pkt_frag_unref(current_pkt->frags);
 	current_pkt->frags = NULL;
 }
@@ -152,7 +168,7 @@ static void test_associate_shell_cmd(struct ieee802154_context *ctx)
 {
 	uint8_t expected_coord_addr_le[] = {EXPECTED_COORDINATOR_ADDR_LE};
 	struct ieee802154_mpdu mpdu = {0};
-	struct net_buf *assoc_req;
+	struct net_buf *ack_buf;
 	int ret;
 
 	/* The association response placed into the RX queue will be received and
@@ -173,20 +189,18 @@ static void test_associate_shell_cmd(struct ieee802154_context *ctx)
 		ctx->coord_ext_addr, expected_coord_addr_le, sizeof(ctx->coord_ext_addr),
 		"Association: did not get associated co-ordinator by the expected coordinator.");
 
-	/* Test the association request that should have been sent out. */
+	/* remove ACK fragment */
 	zassert_not_null(current_pkt);
-	assoc_req = current_pkt->frags;
-	zassert_not_null(assoc_req);
+	zassert_not_null(current_pkt->buffer);
+	ack_buf = net_buf_frag_last(current_pkt->buffer);
+	zassert_not_equal(ack_buf, current_pkt->buffer, "Expected ACK package");
+	zassert_equal(net_buf_frags_len(ack_buf), IEEE802154_IMM_ACK_PKT_LENGTH,
+		      "ACK package has unexpected length.");
+	net_pkt_frag_del(current_pkt, current_pkt->buffer, ack_buf);
 
-	if (!ieee802154_validate_frame(assoc_req->data, assoc_req->len, &mpdu)) {
-		NET_ERR("*** Could not parse association request.\n");
-		ztest_test_fail();
-		goto release_frag;
-	}
-
+	parse_frame(&mpdu);
 	test_association_request(&mpdu);
 
-release_frag:
 	net_pkt_frag_unref(current_pkt->frags);
 	current_pkt->frags = NULL;
 }
@@ -237,18 +251,16 @@ ZTEST(ieee802154_l2_shell, test_associate)
 {
 	uint8_t coord_addr_le[] = {EXPECTED_COORDINATOR_ADDR_LE};
 	struct ieee802154_context *ctx = net_if_l2_data(net_iface);
-	struct ieee802154_frame_params params = {
-		.dst = {
-			.len = IEEE802154_EXT_ADDR_LENGTH,
-			.pan_id = EXPECTED_COORDINATOR_PAN_CPU_ORDER,
-		}};
+	struct ieee802154_frame_params params = {0};
 	struct ieee802154_command *cmd;
 	struct net_pkt *pkt;
 
+	params.dst.len = IEEE802154_EXT_ADDR_LENGTH;
 	sys_memcpy_swap(params.dst.ext_addr, ctx->ext_addr, sizeof(params.dst.ext_addr));
 
 	/* Simulate a packet from the coordinator. */
 	memcpy(ctx->ext_addr, coord_addr_le, sizeof(ctx->ext_addr));
+	ctx->pan_id = EXPECTED_COORDINATOR_PAN_CPU_ORDER;
 
 	pkt = ieee802154_create_mac_cmd_frame(net_iface, IEEE802154_CFI_ASSOCIATION_RESPONSE,
 					      &params);
@@ -271,6 +283,7 @@ ZTEST(ieee802154_l2_shell, test_associate)
 
 	/* Restore the end device's extended address. */
 	sys_memcpy_swap(ctx->ext_addr, params.dst.ext_addr, sizeof(ctx->ext_addr));
+	ctx->pan_id = IEEE802154_PAN_ID_NOT_ASSOCIATED;
 
 	test_associate_shell_cmd(ctx);
 	return;
@@ -309,18 +322,9 @@ ZTEST(ieee802154_l2_shell, test_initiate_disassociation_from_enddevice)
 	zassert_mem_equal(ctx->ext_addr, mock_ext_addr_le, sizeof(ctx->ext_addr),
 			  "Disassociation: Ext addr should be unaffected.");
 
-	zassert_not_null(current_pkt);
-
-	if (!ieee802154_validate_frame(net_pkt_data(current_pkt), net_pkt_get_len(current_pkt),
-				       &mpdu)) {
-		NET_ERR("*** Could not parse disassociation notification.\n");
-		ztest_test_fail();
-		goto release_frag;
-	}
-
+	parse_frame(&mpdu);
 	test_disassociation_notification(&mpdu);
 
-release_frag:
 	net_pkt_frag_unref(current_pkt->frags);
 	current_pkt->frags = NULL;
 }
@@ -380,7 +384,7 @@ ZTEST(ieee802154_l2_shell, test_initiate_disassociation_from_coordinator)
 	/* We should have received an ACK packet. */
 	zassert_not_null(current_pkt);
 	zassert_not_null(current_pkt->frags);
-	zassert_equal(net_pkt_get_len(current_pkt), IEEE802154_ACK_PKT_LENGTH,
+	zassert_equal(net_pkt_get_len(current_pkt), IEEE802154_IMM_ACK_PKT_LENGTH,
 		      "Did not receive the expected ACK packet.");
 	net_pkt_frag_unref(current_pkt->frags);
 	current_pkt->frags = NULL;
@@ -428,20 +432,31 @@ ZTEST(ieee802154_l2_shell, test_set_ext_addr)
 	memcpy(ctx->ext_addr, initial_ext_addr_le, sizeof(ctx->ext_addr));
 }
 
-static void reset_fake_driver(void *test_fixture)
+static void reset_fake_driver(bool is_associated)
 {
 	struct ieee802154_context *ctx;
-
-	ARG_UNUSED(test_fixture);
 
 	__ASSERT_NO_MSG(net_iface);
 
 	/* Set initial conditions. */
 	ctx = net_if_l2_data(net_iface);
-	ctx->pan_id = IEEE802154_PAN_ID_NOT_ASSOCIATED;
-	ctx->short_addr = IEEE802154_SHORT_ADDRESS_NOT_ASSOCIATED;
+	ctx->pan_id = is_associated ? mock_pan_id : IEEE802154_PAN_ID_NOT_ASSOCIATED;
+	ctx->short_addr = is_associated ? IEEE802154_NO_SHORT_ADDRESS_ASSIGNED
+					: IEEE802154_SHORT_ADDRESS_NOT_ASSOCIATED;
 	ctx->coord_short_addr = IEEE802154_SHORT_ADDRESS_NOT_ASSOCIATED;
 	memset(ctx->coord_ext_addr, 0, sizeof(ctx->coord_ext_addr));
+}
+
+static void before(void *test_fixture)
+{
+	ARG_UNUSED(test_fixture);
+	reset_fake_driver(false);
+}
+
+static void after(void *test_fixture)
+{
+	ARG_UNUSED(test_fixture);
+	reset_fake_driver(true);
 }
 
 static void *test_setup(void)
@@ -480,5 +495,4 @@ static void test_teardown(void *test_fixture)
 	current_pkt = NULL;
 }
 
-ZTEST_SUITE(ieee802154_l2_shell, NULL, test_setup, reset_fake_driver, reset_fake_driver,
-	    test_teardown);
+ZTEST_SUITE(ieee802154_l2_shell, NULL, test_setup, before, after, test_teardown);

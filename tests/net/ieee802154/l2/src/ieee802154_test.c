@@ -26,6 +26,8 @@ LOG_MODULE_REGISTER(net_ieee802154_test, LOG_LEVEL_DBG);
 #include <ieee802154_priv.h>
 #include <ipv6.h>
 
+#define MOCK_SHORT_ADDRESS 0x5678
+
 struct ieee802154_pkt_test {
 	char *name;
 	struct in6_addr src;
@@ -35,7 +37,8 @@ struct ieee802154_pkt_test {
 	uint8_t length;
 	uint8_t payload_length;
 	struct {
-		struct ieee802154_fcf_seq *fc_seq;
+		struct ieee802154_frame_control frame_control;
+		uint8_t *seq_pointer;
 		struct ieee802154_address_field *dst_addr;
 		struct ieee802154_address_field *src_addr;
 	} mhr_check;
@@ -76,7 +79,19 @@ struct ieee802154_pkt_test test_ns_pkt = {
 	.length = sizeof(ns_pkt),
 	.payload_length = 65U,
 	.mhr_check = {
-		.fc_seq = (struct ieee802154_fcf_seq *)ns_pkt,
+		.frame_control = {
+			.frame_type = IEEE802154_FRAME_TYPE_DATA,
+			.frame_version = IEEE802154_VERSION_802154_2006,
+			.has_dst_pan = 1U,
+			.dst_addr_mode = IEEE802154_ADDR_MODE_SHORT,
+			.has_src_pan = 0U,
+			.src_addr_mode = IEEE802154_ADDR_MODE_EXTENDED,
+			.security_enabled = 0U,
+			.frame_pending = 0U,
+			.ack_requested = 0U,
+			.has_seq_number = 1U,
+		},
+		.seq_pointer = ns_pkt + 2,
 		.dst_addr = (struct ieee802154_address_field *)(ns_pkt + 3),
 		.src_addr = (struct ieee802154_address_field *)(ns_pkt + 7),
 	}};
@@ -93,32 +108,52 @@ struct ieee802154_pkt_test test_ack_pkt = {
 	.length = sizeof(ack_pkt),
 	.payload_length = 0U,
 	.mhr_check = {
-		.fc_seq = (struct ieee802154_fcf_seq *)ack_pkt,
+		.frame_control = {
+			.frame_type = IEEE802154_FRAME_TYPE_ACK,
+			.frame_version = IEEE802154_VERSION_802154_2006,
+			.has_dst_pan = 0U,
+			.dst_addr_mode = IEEE802154_ADDR_MODE_NONE,
+			.has_src_pan = 0U,
+			.src_addr_mode = IEEE802154_ADDR_MODE_NONE,
+			.security_enabled = 0U,
+			.frame_pending = 0U,
+			.ack_requested = 0U,
+			.has_seq_number = 1U,
+		},
+		.seq_pointer = ack_pkt + 2,
 		.dst_addr = NULL,
 		.src_addr = NULL,
 	}};
 
 uint8_t beacon_pkt[] = {
-	0x00, 0xd0, /* FCF */
-	0x11, /* Sequence Number */
+	0x00, 0xe1, /* FCF */
 	0xcd, 0xab, /* Source PAN ID */
 	0xc2, 0xa3, 0x9e, 0x00, 0x00, 0x4b, 0x12, 0x00, /* Source Address */
-	0x00, 0x00, /* Superframe Specification */
-	0x00, /* GTS */
-	0x00, /* Pending Addresses */
-	0x00, 0x00 /* Payload */
+	0x00, 0x00, 0x00, 0x00 /* Payload */
 };
 
 struct ieee802154_pkt_test test_beacon_pkt = {
-	.name = "Empty beacon frame",
-	.sequence = 17U,
+	.name = "Enhanced beacon w/ seq suppr",
+	.sequence = 0U,
 	.pkt = beacon_pkt,
 	.length = sizeof(beacon_pkt),
-	.payload_length = 6U,
+	.payload_length = 4U,
 	.mhr_check = {
-		.fc_seq = (struct ieee802154_fcf_seq *)beacon_pkt,
+		.frame_control = {
+			.frame_type = IEEE802154_FRAME_TYPE_BEACON,
+			.frame_version = IEEE802154_VERSION_802154,
+			.has_dst_pan = 0U,
+			.dst_addr_mode = IEEE802154_ADDR_MODE_NONE,
+			.has_src_pan = 1U,
+			.src_addr_mode = IEEE802154_ADDR_MODE_EXTENDED,
+			.security_enabled = 0U,
+			.frame_pending = 0U,
+			.ack_requested = 0U,
+			.has_seq_number = 0U,
+		},
+		.seq_pointer = NULL,
 		.dst_addr = NULL,
-		.src_addr = (struct ieee802154_address_field *)(beacon_pkt + 3),
+		.src_addr = (struct ieee802154_address_field *)(beacon_pkt + 2),
 	}};
 
 uint8_t sec_data_pkt[] = {
@@ -141,7 +176,19 @@ struct ieee802154_pkt_test test_sec_data_pkt = {
 	.length = sizeof(sec_data_pkt),
 	.payload_length = 4U /* encrypted payload */ + 16U /* MIC */,
 	.mhr_check = {
-		.fc_seq = (struct ieee802154_fcf_seq *)sec_data_pkt,
+		.frame_control = {
+			.frame_type = IEEE802154_FRAME_TYPE_DATA,
+			.frame_version = IEEE802154_VERSION_802154_2006,
+			.has_dst_pan = 1U,
+			.dst_addr_mode = IEEE802154_ADDR_MODE_SHORT,
+			.has_src_pan = 0U,
+			.src_addr_mode = IEEE802154_ADDR_MODE_EXTENDED,
+			.security_enabled = 1U,
+			.frame_pending = 0U,
+			.ack_requested = 0U,
+			.has_seq_number = 1U,
+		},
+		.seq_pointer = sec_data_pkt + 2,
 		.dst_addr = (struct ieee802154_address_field *)(sec_data_pkt + 3),
 		.src_addr = (struct ieee802154_address_field *)(sec_data_pkt + 7),
 	}};
@@ -162,10 +209,9 @@ uint8_t raw_payload[] = {
 #define RAW_MAC_PAYLOAD_START_INDEX 17
 #define RAW_MAC_PAYLOAD_LENGTH 3
 
-#define MOCK_PAN_ID 0xabcd
-
 extern struct net_pkt *current_pkt;
 extern struct k_sem driver_lock;
+extern uint16_t mock_pan_id;
 
 static struct net_if *net_iface;
 
@@ -225,7 +271,6 @@ static int disassociate(struct net_if *iface, struct ieee802154_context *ctx)
 
 static int associate(struct net_if *iface, struct ieee802154_context *ctx, uint16_t short_addr)
 {
-	uint16_t mock_pan_id = MOCK_PAN_ID;
 	int ret;
 
 	if (ctx->short_addr == short_addr) {
@@ -249,9 +294,9 @@ static int associate(struct net_if *iface, struct ieee802154_context *ctx, uint1
 	return 0;
 }
 
-static int set_up_short_addr(struct net_if *iface, struct ieee802154_context *ctx)
+static int set_up_short_addr(struct net_if *iface, struct ieee802154_context *ctx,
+			     uint16_t mock_short_addr)
 {
-	const uint16_t mock_short_addr = 0x5678;
 	int ret;
 
 	ret = disassociate(iface, ctx);
@@ -432,37 +477,52 @@ release_fd:
 static bool test_packet_parsing(struct ieee802154_pkt_test *t)
 {
 	struct ieee802154_mpdu mpdu = {0};
+	struct ieee802154_mhr *mhr;
+	struct net_buf buf = {0};
+	bool result = false;
 
 	NET_INFO("- Parsing packet 0x%p of frame %s\n", t->pkt, t->name);
 
-	if (!ieee802154_validate_frame(t->pkt, t->length, &mpdu)) {
-		NET_ERR("*** Could not validate frame %s\n", t->name);
-		return false;
+	net_buf_simple_init_with_data(&buf.b, t->pkt, t->length);
+	net_pkt_frag_add(current_pkt, &buf);
+
+	if (!ieee802154_parse_mhr(current_pkt, &mpdu)) {
+		NET_ERR("*** Could not parse frame %s\n", t->name);
+		goto release_frag;
 	}
 
-	if (mpdu.mhr.fs != t->mhr_check.fc_seq ||
-	    mpdu.mhr.dst_addr != t->mhr_check.dst_addr ||
-	    mpdu.mhr.src_addr != t->mhr_check.src_addr) {
-		NET_INFO("d: %p vs %p -- s: %p vs %p\n",
-			 mpdu.mhr.dst_addr, t->mhr_check.dst_addr,
-			 mpdu.mhr.src_addr, t->mhr_check.src_addr);
-		NET_ERR("*** Wrong MPDU information on frame %s\n",
-			t->name);
+	mhr = &mpdu.mhr;
 
-		return false;
+	if (memcmp(&mhr->frame_control, &t->mhr_check.frame_control,
+		   sizeof(struct ieee802154_frame_control))) {
+		NET_ERR("*** Invalid FCF\n", t->name);
+		goto release_frag;
 	}
 
-	if (mpdu.mhr.fs->sequence != t->sequence) {
+	if (mhr->dst_addr != t->mhr_check.dst_addr || mhr->src_addr != t->mhr_check.src_addr) {
+		NET_INFO("d: %p vs %p -- s: %p vs %p\n", mhr->dst_addr, t->mhr_check.dst_addr,
+			 mhr->src_addr, t->mhr_check.src_addr);
+		NET_ERR("*** Wrong addressing information on frame %s\n", t->name);
+		goto release_frag;
+	}
+
+	if (mhr->sequence != t->sequence ||
+	    (t->mhr_check.seq_pointer && mhr->sequence != *t->mhr_check.seq_pointer)) {
 		NET_ERR("*** Invalid sequence number\n", t->name);
-		return false;
+		goto release_frag;
 	}
 
-	if (mpdu.payload_length != t->payload_length) {
+	if (mpdu.mac_payload_length != t->payload_length) {
 		NET_ERR("*** Invalid payload length\n", t->name);
-		return false;
+		goto release_frag;
 	}
 
-	return true;
+	result = true;
+
+release_frag:
+	net_pkt_frag_unref(current_pkt->frags);
+	current_pkt->frags = NULL;
+	return result;
 }
 
 static bool test_ns_sending(struct ieee802154_pkt_test *t, bool with_short_addr)
@@ -476,7 +536,9 @@ static bool test_ns_sending(struct ieee802154_pkt_test *t, bool with_short_addr)
 	/* ensure reproducible results */
 	ctx->sequence = t->sequence;
 
-	if (with_short_addr && set_up_short_addr(net_iface, ctx)) {
+	if (set_up_short_addr(net_iface, ctx,
+			      with_short_addr ? MOCK_SHORT_ADDRESS
+					      : IEEE802154_NO_SHORT_ADDRESS_ASSIGNED)) {
 		goto out;
 	}
 
@@ -506,8 +568,7 @@ static bool test_ns_sending(struct ieee802154_pkt_test *t, bool with_short_addr)
 		}
 	}
 
-	if (!ieee802154_validate_frame(net_pkt_data(current_pkt),
-				       net_pkt_get_len(current_pkt), &mpdu)) {
+	if (!ieee802154_parse_mhr(current_pkt, &mpdu)) {
 		NET_ERR("*** Sent packet is not valid\n");
 		goto release_frag;
 	}
@@ -536,25 +597,25 @@ static bool test_wait_for_ack(struct ieee802154_pkt_test *t)
 		goto out;
 	}
 
-	ack_required = ieee802154_prepare_for_ack(net_iface, tx_pkt, tx_pkt->frags);
+	ack_required = ieee802154_prepare_for_ack(net_iface, tx_pkt->frags);
 	if (!ack_required) {
 		NET_ERR("*** Expected AR flag to be set\n");
 		goto release_tx_pkt;
 	}
 
-	if (!ieee802154_validate_frame(net_pkt_data(tx_pkt), net_pkt_get_len(tx_pkt), &mpdu)) {
+	if (!ieee802154_parse_mhr(tx_pkt, &mpdu)) {
 		NET_ERR("*** Could not parse data pkt.\n");
 		goto release_tx_pkt;
 	}
 
-	one_ack_pkt = net_pkt_rx_alloc_with_buffer(net_iface, IEEE802154_ACK_PKT_LENGTH,
+	one_ack_pkt = net_pkt_rx_alloc_with_buffer(net_iface, IEEE802154_IMM_ACK_PKT_LENGTH,
 						   AF_UNSPEC, 0, K_FOREVER);
 	if (!one_ack_pkt) {
 		NET_ERR("*** Could not allocate ack pkt.\n");
 		goto release_tx_pkt;
 	}
 
-	if (!ieee802154_create_ack_frame(net_iface, one_ack_pkt, mpdu.mhr.fs->sequence)) {
+	if (!ieee802154_create_imm_ack_frame(net_iface, one_ack_pkt, mpdu.mhr.sequence)) {
 		NET_ERR("*** Could not create ack frame.\n");
 		goto release_tx_pkt;
 	}
@@ -583,8 +644,8 @@ out:
 
 static bool test_packet_cloning_with_cb(void)
 {
-	struct net_pkt *pkt;
 	struct net_pkt *cloned_pkt;
+	struct net_pkt *pkt;
 
 	NET_INFO("- Cloning packet\n");
 
@@ -699,6 +760,7 @@ static bool test_dgram_packet_sending(void *dst_sll, uint8_t dst_sll_halen, uint
 	}
 
 	NET_INFO("- Sending DGRAM packet via AF_PACKET socket\n");
+
 	fd = socket(AF_PACKET, SOCK_DGRAM, ETH_P_IEEE802154);
 	if (fd < 0) {
 		NET_ERR("*** Failed to create DGRAM socket : %d\n", errno);
@@ -713,7 +775,9 @@ static bool test_dgram_packet_sending(void *dst_sll, uint8_t dst_sll_halen, uint
 	bool bind_short_address = pkt_dst_sll.sll_halen == IEEE802154_SHORT_ADDR_LENGTH &&
 				  security_level == IEEE802154_SECURITY_LEVEL_NONE;
 
-	if (bind_short_address && set_up_short_addr(net_iface, ctx)) {
+	if (set_up_short_addr(net_iface, ctx,
+			      bind_short_address ? MOCK_SHORT_ADDRESS
+						 : IEEE802154_NO_SHORT_ADDRESS_ASSIGNED)) {
 		goto release_fd;
 	}
 
@@ -738,21 +802,17 @@ static bool test_dgram_packet_sending(void *dst_sll, uint8_t dst_sll_halen, uint
 
 	pkt_hexdump(net_pkt_data(current_pkt), net_pkt_get_len(current_pkt));
 
-	if (!ieee802154_validate_frame(net_pkt_data(current_pkt),
-				       net_pkt_get_len(current_pkt), &mpdu)) {
+	if (!ieee802154_parse_mhr(current_pkt, &mpdu)) {
 		NET_ERR("*** Sent packet is not valid\n");
 		goto release_frag;
 	}
 
-	net_pkt_lladdr_src(current_pkt)->addr = net_if_get_link_addr(net_iface)->addr;
-	net_pkt_lladdr_src(current_pkt)->len = net_if_get_link_addr(net_iface)->len;
-
-	if (!ieee802154_decipher_data_frame(net_iface, current_pkt, &mpdu)) {
+	if (!ieee802154_incoming_security_procedure(net_iface, current_pkt, &mpdu)) {
 		NET_ERR("*** Cannot decipher/authenticate packet\n");
 		goto release_frag;
 	}
 
-	if (memcmp(mpdu.payload, payload, sizeof(payload)) != 0) {
+	if (memcmp(mpdu.mac_payload, payload, sizeof(payload)) != 0) {
 		NET_ERR("*** Payload of sent packet is incorrect\n");
 		goto release_frag;
 	}
@@ -778,6 +838,7 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 	struct ieee802154_context *ctx = net_if_l2_data(net_iface);
 	uint8_t our_ext_addr[IEEE802154_EXT_ADDR_LENGTH]; /* big endian */
 	uint8_t payload[] = {0x01, 0x02, 0x03, 0x04};
+	struct ieee802154_frame_params params = {0};
 	uint16_t our_short_addr = ctx->short_addr; /* CPU byte order */
 	uint8_t ll_hdr_len = 0, authtag_len = 0;
 	struct sockaddr_ll recv_src_sll = {0};
@@ -815,14 +876,7 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 	pkt->lladdr_dst.addr = is_broadcast ? NULL : our_ext_addr;
 	pkt->lladdr_dst.len = is_broadcast ? 0 : sizeof(ctx->ext_addr);
 
-	if (src_ll_addr_len == IEEE802154_SHORT_ADDR_LENGTH ||
-	    src_ll_addr_len == IEEE802154_EXT_ADDR_LENGTH) {
-		pkt->lladdr_src.addr = src_ll_addr;
-	} else {
-		NET_ERR("*** Illegal L2 source address length.\n");
-		goto release_pkt;
-	}
-	pkt->lladdr_src.len = src_ll_addr_len;
+	pkt->lladdr_src.addr = NULL;
 
 	frame_buf = net_pkt_get_frag(pkt, IEEE802154_MTU, K_FOREVER);
 	if (!frame_buf) {
@@ -830,16 +884,8 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 		goto release_pkt;
 	}
 
-	ieee802154_compute_header_and_authtag_len(
-		net_iface, net_pkt_lladdr_dst(pkt), net_pkt_lladdr_src(pkt),
-		&ll_hdr_len, &authtag_len);
-
-	net_buf_add(frame_buf, ll_hdr_len);
-	net_buf_add_mem(frame_buf, payload, sizeof(payload));
-	net_buf_add(frame_buf, authtag_len);
-
 	/* Temporarily set the ctx address to the given source address so
-	 * we can use ieee802154_create_data_frame().
+	 * we can use ieee802154_get_frame_params() with it.
 	 */
 	if (src_ll_addr_len == IEEE802154_SHORT_ADDR_LENGTH) {
 		ctx->short_addr = ntohs(*(uint16_t *)src_ll_addr);
@@ -850,8 +896,18 @@ static bool test_dgram_packet_reception(void *src_ll_addr, uint8_t src_ll_addr_l
 		goto release_pkt;
 	}
 
-	frame_result = ieee802154_create_data_frame(ctx, net_pkt_lladdr_dst(pkt),
-						    net_pkt_lladdr_src(pkt), frame_buf, ll_hdr_len);
+	if (ieee802154_get_data_frame_params(ctx, net_pkt_lladdr_dst(pkt), net_pkt_lladdr_src(pkt),
+					     &params, &ll_hdr_len, &authtag_len)) {
+		NET_ERR("*** Failed to get frame params.\n");
+		goto release_pkt;
+	}
+
+	net_buf_add(frame_buf, ll_hdr_len);
+	net_buf_add_mem(frame_buf, payload, sizeof(payload));
+	net_buf_add(frame_buf, authtag_len);
+
+	frame_result =
+		ieee802154_create_data_frame(ctx, &params, frame_buf, ll_hdr_len, authtag_len);
 
 	if (src_ll_addr_len == IEEE802154_SHORT_ADDR_LENGTH) {
 		ctx->short_addr = our_short_addr;
@@ -961,13 +1017,12 @@ static bool test_raw_packet_sending(void)
 
 	pkt_hexdump(net_pkt_data(current_pkt), net_pkt_get_len(current_pkt));
 
-	if (!ieee802154_validate_frame(net_pkt_data(current_pkt),
-				       net_pkt_get_len(current_pkt), &mpdu)) {
+	if (!ieee802154_parse_mhr(current_pkt, &mpdu)) {
 		NET_ERR("*** Sent packet is not valid\n");
 		goto release_frag;
 	}
 
-	if (memcmp(mpdu.payload, &raw_payload[RAW_MAC_PAYLOAD_START_INDEX],
+	if (memcmp(mpdu.mac_payload, &raw_payload[RAW_MAC_PAYLOAD_START_INDEX],
 		   RAW_MAC_PAYLOAD_LENGTH) != 0) {
 		NET_ERR("*** Payload of sent packet is incorrect\n");
 		goto release_frag;
@@ -1126,7 +1181,7 @@ static bool test_recv_and_send_ack_reply(struct ieee802154_pkt_test *t)
 		goto release_fd;
 	}
 
-	if (set_up_short_addr(net_iface, ctx)) {
+	if (set_up_short_addr(net_iface, ctx, MOCK_SHORT_ADDRESS)) {
 		goto release_fd;
 	}
 
@@ -1177,19 +1232,18 @@ static bool test_recv_and_send_ack_reply(struct ieee802154_pkt_test *t)
 
 	pkt_hexdump(net_pkt_data(current_pkt), net_pkt_get_len(current_pkt));
 
-	if (!ieee802154_validate_frame(net_pkt_data(current_pkt),
-				       net_pkt_get_len(current_pkt), &mpdu)) {
+	if (!ieee802154_parse_mhr(current_pkt, &mpdu)) {
 		NET_ERR("*** ACK Reply is invalid\n");
 		goto release_tx_frag;
 	}
 
-	if (memcmp(mpdu.mhr.fs, t->mhr_check.fc_seq,
-		   sizeof(struct ieee802154_fcf_seq))) {
+	if (memcmp(&mpdu.mhr.frame_control, &t->mhr_check.frame_control,
+		   sizeof(struct ieee802154_frame_control))) {
 		NET_ERR("*** ACK Reply does not compare\n");
 		goto release_tx_frag;
 	}
 
-	if (mpdu.mhr.fs->sequence != t->sequence) {
+	if (mpdu.mhr.sequence != t->sequence || mpdu.mhr.sequence != *t->mhr_check.seq_pointer) {
 		NET_ERR("*** Sequence number invalid\n");
 		goto release_tx_frag;
 	}
@@ -1212,7 +1266,6 @@ out:
 
 static bool initialize_test_environment(void)
 {
-	uint16_t mock_pan_id = MOCK_PAN_ID;
 	const struct device *dev;
 
 	k_sem_reset(&driver_lock);
@@ -1232,12 +1285,6 @@ static bool initialize_test_environment(void)
 	net_iface = net_if_lookup_by_dev(dev);
 	if (!net_iface) {
 		NET_ERR("*** Could not get fake iface\n");
-		goto release_pkt;
-	}
-
-	if (net_mgmt(NET_REQUEST_IEEE802154_SET_PAN_ID, net_iface,
-		     &mock_pan_id, sizeof(mock_pan_id))) {
-		NET_ERR("*** Failed to set PAN ID in %s.\n", __func__);
 		goto release_pkt;
 	}
 

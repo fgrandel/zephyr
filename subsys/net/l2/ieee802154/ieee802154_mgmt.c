@@ -53,7 +53,7 @@ enum net_verdict ieee802154_handle_beacon(struct net_if *iface,
 	ctx->scan_ctx->pan_id = mpdu->mhr.src_addr->plain.pan_id;
 	ctx->scan_ctx->lqi = lqi;
 
-	if (mpdu->mhr.fs->fc.src_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
+	if (mpdu->mhr.frame_control.src_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
 		ctx->scan_ctx->len = IEEE802154_SHORT_ADDR_LENGTH;
 		ctx->scan_ctx->short_addr =
 			sys_le16_to_cpu(mpdu->mhr.src_addr->plain.addr.short_addr);
@@ -120,10 +120,6 @@ static int ieee802154_scan(uint32_t mgmt_request, struct net_if *iface,
 
 	if (mgmt_request == NET_REQUEST_IEEE802154_ACTIVE_SCAN) {
 		struct ieee802154_frame_params params = {0};
-
-		params.dst.len = IEEE802154_SHORT_ADDR_LENGTH;
-		params.dst.short_addr = IEEE802154_BROADCAST_ADDRESS;
-		params.dst.pan_id = IEEE802154_BROADCAST_PAN_ID;
 
 		pkt = ieee802154_create_mac_cmd_frame(
 			iface, IEEE802154_CFI_BEACON_REQUEST, &params);
@@ -330,12 +326,12 @@ enum net_verdict ieee802154_handle_mac_command(struct net_if *iface,
 		 * Note: Unless the packet is authenticated, it cannot be verified
 		 *       that the response comes from the requested coordinator.
 		 */
-		if (mpdu->mhr.fs->fc.src_addr_mode !=
+		if (mpdu->mhr.frame_control.src_addr_mode !=
 			    IEEE802154_ADDR_MODE_EXTENDED ||
-		    mpdu->mhr.fs->fc.dst_addr_mode !=
+		    mpdu->mhr.frame_control.dst_addr_mode !=
 			    IEEE802154_ADDR_MODE_EXTENDED ||
-		    mpdu->mhr.fs->fc.ar != 1 ||
-		    mpdu->mhr.fs->fc.pan_id_comp != 1 ||
+		    mpdu->mhr.frame_control.ack_requested != 1 ||
+		    !mpdu->mhr.frame_control.has_dst_pan || mpdu->mhr.frame_control.has_src_pan ||
 		    mpdu->mhr.dst_addr->plain.pan_id != sys_cpu_to_le16(ctx->pan_id) ||
 		    mpdu->command->assoc_res.short_addr == IEEE802154_PAN_ID_NOT_ASSOCIATED) {
 			return NET_DROP;
@@ -400,10 +396,10 @@ enum net_verdict ieee802154_handle_mac_command(struct net_if *iface,
 		 *       that the command comes from the requested coordinator.
 		 */
 
-		if (mpdu->mhr.fs->fc.src_addr_mode !=
+		if (mpdu->mhr.frame_control.src_addr_mode !=
 			    IEEE802154_ADDR_MODE_EXTENDED ||
-		    mpdu->mhr.fs->fc.ar != 1 ||
-		    mpdu->mhr.fs->fc.pan_id_comp != 1 ||
+		    !mpdu->mhr.frame_control.ack_requested ||
+		    !mpdu->mhr.frame_control.has_dst_pan || mpdu->mhr.frame_control.has_src_pan ||
 		    mpdu->mhr.dst_addr->plain.pan_id != sys_cpu_to_le16(ctx->pan_id)) {
 			goto out;
 		}
@@ -455,12 +451,6 @@ static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
 	}
 
 	params.dst.pan_id = req->pan_id;
-
-	/* If the Version field is set to 0b10, the Source PAN ID field is
-	 * omitted. Otherwise, the Source PAN ID field shall contain the
-	 * broadcast PAN ID.
-	 */
-	params.pan_id = IEEE802154_BROADCAST_PAN_ID;
 
 	/* Validate the coordinator's short address - if any. */
 	if (req->len == IEEE802154_SHORT_ADDR_LENGTH) {
@@ -632,27 +622,6 @@ static int ieee802154_disassociate(uint32_t mgmt_request, struct net_if *iface,
 	if (!is_associated(ctx)) {
 		k_sem_give(&ctx->ctx_lock);
 		return -EALREADY;
-	}
-
-	/* See section 7.5.4:
-	 *  * The Destination PAN ID field shall contain the value of macPanId.
-	 *  * If an associated device is disassociating from the PAN, then the
-	 *    Destination Address field shall contain the value of either
-	 *    macCoordShortAddress, if the Destination Addressing Mode field is
-	 *    set to indicated short addressing, or macCoordExtendedAddress, if
-	 *    the Destination Addressing Mode field is set to indicated extended
-	 *    addressing.
-	 */
-	params.dst.pan_id = ctx->pan_id;
-
-	if (ctx->coord_short_addr != IEEE802154_SHORT_ADDRESS_NOT_ASSOCIATED &&
-	    ctx->coord_short_addr != IEEE802154_NO_SHORT_ADDRESS_ASSIGNED) {
-		params.dst.len = IEEE802154_SHORT_ADDR_LENGTH;
-		params.dst.short_addr = ctx->coord_short_addr;
-	} else {
-		params.dst.len = IEEE802154_EXT_ADDR_LENGTH;
-		sys_memcpy_swap(params.dst.ext_addr, ctx->coord_ext_addr,
-				sizeof(params.dst.ext_addr));
 	}
 
 	k_sem_give(&ctx->ctx_lock);

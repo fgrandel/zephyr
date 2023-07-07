@@ -25,11 +25,11 @@
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/toolchain.h>
 
-#define IEEE802154_ACK_PKT_LENGTH 3 /* Imm-Ack length, see section 7.3.3 */
-#define IEEE802154_MIN_LENGTH	  IEEE802154_ACK_PKT_LENGTH
-
-#define IEEE802154_FCF_SEQ_LENGTH     3
-#define IEEE802154_PAN_ID_LENGTH      2
+#define IEEE802154_IMM_ACK_PKT_LENGTH 3 /* see section 7.3.3 */
+#define IEEE802154_MIN_LENGTH	      IEEE802154_IMM_ACK_PKT_LENGTH
+#define IEEE802154_FCF_LENGTH	 2
+#define IEEE802154_SEQ_LENGTH	 1
+#define IEEE802154_PAN_ID_LENGTH 2
 
 #define IEEE802154_BEACON_MIN_SIZE	  4
 #define IEEE802154_BEACON_SF_SIZE	  2
@@ -71,8 +71,7 @@ enum ieee802154_version {
 };
 
 /** Frame Control Field, see section 7.2.2 */
-struct ieee802154_fcf_seq {
-	struct {
+struct ieee802154_fcf {
 #ifdef CONFIG_LITTLE_ENDIAN
 		uint16_t frame_type : 3;
 		uint16_t security_enabled : 1;
@@ -81,7 +80,7 @@ struct ieee802154_fcf_seq {
 		uint16_t pan_id_comp : 1;
 		uint16_t reserved : 1;
 		uint16_t seq_num_suppr : 1;
-		uint16_t ie_list : 1;
+		uint16_t ie_present : 1;
 		uint16_t dst_addr_mode : 2;
 		uint16_t frame_version : 2;
 		uint16_t src_addr_mode : 2;
@@ -95,12 +94,9 @@ struct ieee802154_fcf_seq {
 		uint16_t src_addr_mode : 2;
 		uint16_t frame_version : 2;
 		uint16_t dst_addr_mode : 2;
-		uint16_t ie_list : 1;
+		uint16_t ie_present : 1;
 		uint16_t seq_num_suppr : 1;
 #endif
-	} fc __packed;
-
-	uint8_t sequence;
 } __packed;
 
 struct ieee802154_address {
@@ -207,16 +203,6 @@ struct ieee802154_aux_security_hdr {
 } __packed;
 
 #define IEEE802154_SECURITY_FRAME_COUNTER_LENGTH 4
-
-/** MAC header and footer, see section 7.2.1 */
-struct ieee802154_mhr {
-	struct ieee802154_fcf_seq *fs;
-	struct ieee802154_address_field *dst_addr;
-	struct ieee802154_address_field *src_addr;
-#ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-	struct ieee802154_aux_security_hdr *aux_sec;
-#endif
-};
 
 /** see section 7.3.1.5, figure 7-10 */
 struct ieee802154_gts_dir {
@@ -437,15 +423,76 @@ struct ieee802154_command {
 
 #define IEEE802154_CMD_CFI_LENGTH 1
 
-/** Frame */
+/* MAC header and footer, see sections 7.2 (general) and 7.3.1.2 (beacon) */
+
+/**
+ * Processed information from frame control field
+ *
+ * Some fields in the FCF require version-specific mangling
+ * and/or decoding, therefore we provide a version-independent
+ * API derived from the version-specific frame control field.
+ */
+struct ieee802154_frame_control {
+	uint16_t frame_type : 3;
+	uint16_t frame_version : 2;
+	uint16_t has_dst_pan : 1;
+	uint16_t dst_addr_mode : 2;
+	uint16_t has_src_pan : 1;
+	uint16_t src_addr_mode : 2;
+	uint16_t security_enabled : 1;
+	uint16_t frame_pending : 1;
+	uint16_t ack_requested : 1;
+	uint16_t has_seq_number : 1;
+	uint16_t ie_present : 1;
+};
+
+/**
+ * Parsed frame header
+ *
+ * Contains pointers into the raw packet buffer except for the header IEs
+ */
+struct ieee802154_mhr {
+	/* variable length - may be missing (NULL), compressed or plain,
+	 * address (but not PAN) swapped to big endian on reception!
+	 */
+	struct ieee802154_address_field *dst_addr;
+
+	/* variable length - may be missing (NULL), compressed or plain,
+	 * address (but not PAN) swapped to big endian on reception!
+	 */
+	struct ieee802154_address_field *src_addr;
+
+#ifdef CONFIG_NET_L2_IEEE802154_SECURITY
+	/* variable length - may not be present (NULL)
+	 * even if security is generally enabled
+	 */
+	struct ieee802154_aux_security_hdr *aux_sec;
+#endif
+
+	/* processed information from frame control field */
+	struct ieee802154_frame_control frame_control;
+
+	/* DSN, zero if sequence number was suppressed */
+	uint8_t sequence;
+};
+
+/**
+ * Parsed frame
+ */
 struct ieee802154_mpdu {
-	struct ieee802154_mhr mhr;
+	struct ieee802154_mhr mhr; /* parsed header */
+	/* The following are pointers into the raw packet buffer */
 	union {
-		void *payload;
-		struct ieee802154_beacon *beacon;
-		struct ieee802154_command *command;
+		void *mac_payload;		  /* pointer to MAC payload including payload IEs */
+		struct ieee802154_beacon *beacon; /* pointer to version 2003-2006 beacon payload */
+		struct ieee802154_command
+			*command; /* pointer to version 2003-2006 command payload */
 	};
-	uint16_t payload_length;
+	void *frame_payload; /* pointer to data frame/enhanced beacon/ACK
+			      * frame payload (without payload IEs)
+			      */
+	uint16_t mac_payload_length; /* MAC payload length including payload IEs */
+	uint16_t frame_payload_length; /* frame payload length w/o payload IEs */
 };
 
 /** Frame build parameters */
@@ -460,27 +507,33 @@ struct ieee802154_frame_params {
 		uint16_t pan_id; /* in CPU byte order */
 	} dst;
 
-	uint16_t short_addr; /* in CPU byte order */
+	uint16_t len;
 	uint16_t pan_id; /* in CPU byte order */
 } __packed;
 
-#ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-struct ieee802154_aux_security_hdr *
-ieee802154_validate_aux_security_hdr(uint8_t *buf, uint8_t **p_buf, uint8_t *length);
-#endif
+/**
+ * Parse the MAC header. This must be done at an early parsing stage before
+ * filtering, authentication and decryption.
+ */
+bool ieee802154_parse_mhr(struct net_pkt *pkt, struct ieee802154_mpdu *mpdu);
 
-struct ieee802154_fcf_seq *ieee802154_validate_fc_seq(uint8_t *buf, uint8_t **p_buf,
-						      uint8_t *length);
+/**
+ * Parse the MAC payload after it has been authenticated and/or decrypted.
+ */
+bool ieee802154_parse_mac_payload(struct ieee802154_mpdu *mpdu);
 
-bool ieee802154_validate_frame(uint8_t *buf, uint8_t length, struct ieee802154_mpdu *mpdu);
+/**
+ * Calculates addressing parameters as well as required LL header headroom and authtag
+ * tailroom of an IEEE 802.15.4 generic data frame based on the given input.
+ */
+int ieee802154_get_data_frame_params(struct ieee802154_context *ctx, struct net_linkaddr *dst,
+				     struct net_linkaddr *src,
+				     struct ieee802154_frame_params *params, uint8_t *ll_hdr_len,
+				     uint8_t *authtag_len);
 
-void ieee802154_compute_header_and_authtag_len(struct net_if *iface, struct net_linkaddr *dst,
-					       struct net_linkaddr *src, uint8_t *ll_hdr_len,
-					       uint8_t *authtag_len);
-
-bool ieee802154_create_data_frame(struct ieee802154_context *ctx, struct net_linkaddr *dst,
-				  struct net_linkaddr *src, struct net_buf *buf,
-				  uint8_t ll_hdr_len);
+bool ieee802154_create_data_frame(struct ieee802154_context *ctx,
+				  struct ieee802154_frame_params *params, struct net_buf *buf,
+				  uint8_t ll_hdr_len, uint8_t authtag_len);
 
 struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee802154_cfi type,
 						struct ieee802154_frame_params *params);
@@ -492,13 +545,26 @@ static inline struct ieee802154_command *ieee802154_get_mac_command(struct net_p
 	return (struct ieee802154_command *)(pkt->frags->data + pkt->frags->len);
 }
 
-bool ieee802154_create_ack_frame(struct net_if *iface, struct net_pkt *pkt, uint8_t seq);
+/**
+ * Create an IEEE 802.15.4-2006 immediate ACK frame.
+ */
+bool ieee802154_create_imm_ack_frame(struct net_if *iface, struct net_pkt *pkt, uint8_t seq);
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-bool ieee802154_decipher_data_frame(struct net_if *iface, struct net_pkt *pkt,
-				    struct ieee802154_mpdu *mpdu);
+/**
+ * Authenticates and deciphers a frame after it has been admitted for
+ * further processing (i.e. after filtering it).
+ *
+ * This implements the incoming security procedure with and without
+ * security enabled as specified in sections 9.2.4 and 9.2.5.
+ *
+ * TODO: The implementation is incomplete. The security stack must not
+ * be marked stable unless this procedure has been fully implemented.
+ */
+bool ieee802154_incoming_security_procedure(struct net_if *iface, struct net_pkt *pkt,
+					    struct ieee802154_mpdu *mpdu);
 #else
-#define ieee802154_decipher_data_frame(...) true
+#define ieee802154_incoming_security_procedure(...) true
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
 
 #endif /* __IEEE802154_FRAME_H__ */

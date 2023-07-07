@@ -24,6 +24,7 @@ struct net_pkt *current_pkt;
 K_SEM_DEFINE(driver_lock, 0, UINT_MAX);
 
 uint8_t mock_ext_addr_be[8] = {0x00, 0x12, 0x4b, 0x00, 0x00, 0x9e, 0xa3, 0xc2};
+const uint16_t mock_pan_id = 0xabcd;
 
 static enum ieee802154_hw_caps fake_get_capabilities(const struct device *dev)
 {
@@ -84,14 +85,14 @@ static int fake_tx(const struct device *dev,
 
 		struct net_pkt *ack_pkt;
 
-		ack_pkt = net_pkt_rx_alloc_with_buffer(iface, IEEE802154_ACK_PKT_LENGTH, AF_UNSPEC,
-						       0, K_FOREVER);
+		ack_pkt = net_pkt_rx_alloc_with_buffer(iface, IEEE802154_IMM_ACK_PKT_LENGTH,
+						       AF_UNSPEC, 0, K_FOREVER);
 		if (!ack_pkt) {
 			NET_ERR("*** Could not allocate ack pkt.\n");
 			return -ENOMEM;
 		}
 
-		if (!ieee802154_create_ack_frame(iface, ack_pkt, ctx->ack_seq)) {
+		if (!ieee802154_create_imm_ack_frame(iface, ack_pkt, ctx->ack_seq)) {
 			NET_ERR("*** Could not create ack frame.\n");
 			net_pkt_unref(ack_pkt);
 			return -EFAULT;

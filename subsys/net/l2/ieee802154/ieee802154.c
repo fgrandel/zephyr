@@ -76,17 +76,17 @@ static inline void ieee802154_acknowledge(struct net_if *iface, struct ieee80215
 		return;
 	}
 
-	if (!mpdu->mhr.fs->fc.ar) {
+	if (!mpdu->mhr.frame_control.ack_requested) {
 		return;
 	}
 
-	pkt = net_pkt_alloc_with_buffer(iface, IEEE802154_ACK_PKT_LENGTH, AF_UNSPEC, 0,
+	pkt = net_pkt_alloc_with_buffer(iface, IEEE802154_IMM_ACK_PKT_LENGTH, AF_UNSPEC, 0,
 					BUF_TIMEOUT);
 	if (!pkt) {
 		return;
 	}
 
-	if (ieee802154_create_ack_frame(iface, pkt, mpdu->mhr.fs->sequence)) {
+	if (ieee802154_create_imm_ack_frame(iface, pkt, mpdu->mhr.sequence)) {
 		/* ACK frames must not use the CSMA/CA procedure, see section 6.2.5.1. */
 		ieee802154_radio_tx(iface, IEEE802154_TX_MODE_DIRECT, pkt, pkt->buffer);
 	}
@@ -96,8 +96,7 @@ static inline void ieee802154_acknowledge(struct net_if *iface, struct ieee80215
 	return;
 }
 
-inline bool ieee802154_prepare_for_ack(struct net_if *iface, struct net_pkt *pkt,
-				       struct net_buf *frag)
+inline bool ieee802154_prepare_for_ack(struct net_if *iface, struct net_buf *frag)
 {
 	bool ack_required = ieee802154_is_ar_flag_set(frag);
 
@@ -106,10 +105,10 @@ inline bool ieee802154_prepare_for_ack(struct net_if *iface, struct net_pkt *pkt
 	}
 
 	if (ack_required) {
-		struct ieee802154_fcf_seq *fs = (struct ieee802154_fcf_seq *)frag->data;
 		struct ieee802154_context *ctx = net_if_l2_data(iface);
+		uint8_t ack_seq = *((uint8_t *)frag->data + IEEE802154_FCF_LENGTH);
 
-		ctx->ack_seq = fs->sequence;
+		ctx->ack_seq = ack_seq;
 		if (k_sem_count_get(&ctx->ack_lock) == 1U) {
 			k_sem_take(&ctx->ack_lock, K_NO_WAIT);
 		}
@@ -123,6 +122,8 @@ inline bool ieee802154_prepare_for_ack(struct net_if *iface, struct net_pkt *pkt
 enum net_verdict ieee802154_handle_ack(struct net_if *iface, struct net_pkt *pkt)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_frame_control *frame_control;
+	struct ieee802154_mpdu mpdu;
 
 	if (ieee802154_radio_get_hw_capabilities(iface) & IEEE802154_HW_TX_RX_ACK) {
 		__ASSERT_NO_MSG(ctx->ack_seq == 0U);
@@ -130,23 +131,25 @@ enum net_verdict ieee802154_handle_ack(struct net_if *iface, struct net_pkt *pkt
 		return NET_OK;
 	}
 
-	if (pkt->buffer->len == IEEE802154_ACK_PKT_LENGTH) {
-		uint8_t len = IEEE802154_ACK_PKT_LENGTH;
-		struct ieee802154_fcf_seq *fs;
-
-		fs = ieee802154_validate_fc_seq(net_pkt_data(pkt), NULL, &len);
-		if (!fs || fs->fc.frame_type != IEEE802154_FRAME_TYPE_ACK ||
-		    fs->sequence != ctx->ack_seq) {
-			return NET_CONTINUE;
-		}
-
-		k_sem_give(&ctx->ack_lock);
-
-		/* TODO: Release packet in L2 as we're taking ownership. */
-		return NET_OK;
+	if (!ieee802154_parse_mhr(pkt, &mpdu)) {
+		return NET_DROP;
 	}
 
-	return NET_CONTINUE;
+	frame_control = &mpdu.mhr.frame_control;
+	if (frame_control->frame_type != IEEE802154_FRAME_TYPE_ACK) {
+		return NET_CONTINUE;
+	}
+
+	if ((frame_control->has_seq_number && mpdu.mhr.sequence != ctx->ack_seq) ||
+	    (!frame_control->has_seq_number && ctx->ack_seq != 0)) {
+		return NET_DROP;
+	}
+
+
+	k_sem_give(&ctx->ack_lock);
+
+	/* TODO: Release packet in L2 as we're taking ownership. */
+	return NET_OK;
 }
 
 inline int ieee802154_wait_for_ack(struct net_if *iface, bool ack_required)
@@ -208,7 +211,7 @@ int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_
 		}
 
 		/* No-op in case the driver has IEEE802154_HW_TX_RX_ACK capability. */
-		ack_required = ieee802154_prepare_for_ack(iface, pkt, frag);
+		ack_required = ieee802154_prepare_for_ack(iface, frag);
 
 		/* TX including:
 		 *  - CSMA/CA in case the driver has IEEE802154_HW_CSMA capability,
@@ -287,69 +290,118 @@ static inline void swap_and_set_pkt_ll_addr(struct net_linkaddr *addr, bool has_
  *
  * This is done before deciphering and authenticating encrypted frames.
  */
-static bool ieeee802154_check_dst_addr(struct net_if *iface, struct ieee802154_mhr *mhr)
+static bool ieee802154_filter(struct net_if *iface, struct ieee802154_mhr *mhr)
 {
+	const struct ieee802154_radio_api *radio = net_if_get_device(iface)->api;
 	struct ieee802154_address_field_plain *dst_plain = &mhr->dst_addr->plain;
+	struct ieee802154_frame_control *frame_control = &mhr->frame_control;
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_address *dst_addr;
+	bool has_hw_filter;
 	bool ret = false;
 
-	/* Apply filtering requirements from section 6.7.2 c)-e). For a)-b),
-	 * see ieee802154_parse_fcf_seq()
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+
+	/* 6.3.1.3 "During an active or passive scan, the MAC sublayer shall discard all frames
+	 * received over the PHY data service that are not Beacon frames."
 	 */
-
-	if (mhr->fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_NONE) {
-		if (mhr->fs->fc.frame_version < IEEE802154_VERSION_802154 &&
-		    mhr->fs->fc.frame_type == IEEE802154_FRAME_TYPE_BEACON) {
-			/* See IEEE 802.15.4-2015, section 7.3.1.1. */
-			return true;
-		}
-
-		/* TODO: apply d.4 and d.5 when PAN coordinator is implemented */
-		/* also, macImplicitBroadcast is not implemented */
-		return false;
+	if (ieee802154_is_scanning(ctx) &&
+	    frame_control->frame_type != IEEE802154_FRAME_TYPE_BEACON) {
+		goto out;
 	}
 
-	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+	has_hw_filter = radio->get_capabilities(net_if_get_device(iface)) & IEEE802154_HW_FILTER;
+
+	/* Apply filtering requirements from section 6.7.2 c)-e). For a)-b),
+	 * see parse_fcf_seq()
+	 *
+	 * Some filters are redundant when using HW filtering but we keep
+	 * the full filter procedure as a second line of defense in case
+	 * of driver / hw failures and to keep the code simple. This is a
+	 * negligible performance overhead as correctly HW-filtered packages
+	 * will never reach this code.
+	 */
 
 	/* c) If a destination PAN ID is included in the frame, it shall match
 	 * macPanId or shall be the broadcast PAN ID.
 	 */
-	if (!(dst_plain->pan_id == IEEE802154_BROADCAST_PAN_ID ||
-	      dst_plain->pan_id == sys_cpu_to_le16(ctx->pan_id))) {
-		LOG_DBG("Frame PAN ID does not match!");
-		return false;
+	if (frame_control->has_dst_pan && !(dst_plain->pan_id == IEEE802154_BROADCAST_PAN_ID ||
+					    dst_plain->pan_id == sys_cpu_to_le16(ctx->pan_id))) {
+		if (has_hw_filter) {
+			LOG_WRN("Frame PAN ID does not match!");
+		}
+		goto out;
 	}
 
-	if (mhr->fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
+	dst_addr = frame_control->has_dst_pan ? &dst_plain->addr : &mhr->dst_addr->comp.addr;
+
+	if (frame_control->dst_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
 		/* d.1) A short destination address is included in the frame,
 		 * and it matches either macShortAddress or the broadcast
 		 * address.
 		 */
-		if (!(dst_plain->addr.short_addr == IEEE802154_BROADCAST_ADDRESS ||
-		      dst_plain->addr.short_addr == sys_cpu_to_le16(ctx->short_addr))) {
-			LOG_DBG("Frame dst address (short) does not match!");
+		if (!(dst_addr->short_addr == IEEE802154_BROADCAST_ADDRESS ||
+		      dst_addr->short_addr == sys_cpu_to_le16(ctx->short_addr))) {
+			if (has_hw_filter) {
+				LOG_WRN("Frame dst address (short) does not match!");
+			}
 			goto out;
 		}
 
-	} else if (mhr->fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_EXTENDED) {
+	} else if (frame_control->dst_addr_mode == IEEE802154_ADDR_MODE_EXTENDED) {
 		/* d.2) An extended destination address is included in the frame and
 		 * matches [...] macExtendedAddress [...].
 		 */
-		if (memcmp(dst_plain->addr.ext_addr, ctx->ext_addr,
-				IEEE802154_EXT_ADDR_LENGTH) != 0) {
-			LOG_DBG("Frame dst address (ext) does not match!");
+		if (memcmp(dst_addr->ext_addr, ctx->ext_addr, IEEE802154_EXT_ADDR_LENGTH)) {
+			if (has_hw_filter) {
+				LOG_WRN("Frame dst address (ext) does not match!");
+			}
 			goto out;
 		}
 
-		/* TODO: d.3) The Destination Address field and the Destination PAN ID
+	} else if (frame_control->dst_addr_mode == IEEE802154_ADDR_MODE_NONE &&
+		   frame_control->has_dst_pan == false) {
+		/* d.3) The Destination Address field and the Destination PAN ID
 		 *       field are not included in the frame and macImplicitBroadcast is TRUE.
+		 *
+		 * Also see section 8.4.3.1, table 8-94, macImplicitBroadcast.
+		 *
+		 * Deviating from the standard we assume that macImplicitBroadcast is TRUE
+		 * by default to maintain backwards compatibility.
+		 *
+		 * TODO: We might want to make this MAC PIB attribute configurable
+		 *       in the future.
 		 */
 
+	} else {
 		/* TODO: d.4) The device is the PAN coordinator, only source addressing fields
 		 *       are included in a Data frame or MAC command and the source PAN ID
 		 *       matches macPanId.
 		 */
+
+		/* d.5) not implemented - multipurpose frames are not supported */
+
+		goto out;
 	}
+
+	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_BEACON &&
+	    ctx->pan_id != IEEE802154_BROADCAST_PAN_ID && frame_control->has_src_pan &&
+	    mhr->src_addr->plain.pan_id != sys_cpu_to_le16(ctx->pan_id)) {
+		/* e) If the frame type indicates that the frame is a Beacon frame,
+		 * the source PAN ID shall match macPanId unless macPanId is equal to
+		 * the broadcast PAN ID, in which case the Beacon frame shall
+		 * be accepted regardless of the source PAN ID.
+		 *
+		 * Not all beacon frames contain a source PAN ID, though,
+		 * see section 7.3.1.2, frame version 0b10, Enhanced Beacon
+		 * Request response.
+		 */
+		if (has_hw_filter) {
+			LOG_WRN("Beacon frame src PAN ID does not match!");
+		}
+		goto out;
+	}
+
 	ret = true;
 
 out:
@@ -359,33 +411,41 @@ out:
 
 static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pkt)
 {
-	const struct ieee802154_radio_api *radio = net_if_get_device(iface)->api;
-	struct ieee802154_fcf_seq *fs;
-	struct ieee802154_mpdu mpdu;
+	struct ieee802154_frame_control *frame_control;
+	struct ieee802154_mpdu mpdu = {0};
 	enum net_verdict verdict;
-	bool is_broadcast;
 	size_t ll_hdr_len;
+	bool is_broadcast;
 
 	/* The IEEE 802.15.4 stack assumes that drivers provide a single-fragment package. */
 	__ASSERT_NO_MSG(pkt->buffer && pkt->buffer->frags == NULL);
 
-	if (!ieee802154_validate_frame(net_pkt_data(pkt), net_pkt_get_len(pkt), &mpdu)) {
+	if (!ieee802154_parse_mhr(pkt, &mpdu)) {
 		return NET_DROP;
 	}
 
-	/* validate LL destination address (when IEEE802154_HW_FILTER not available) */
-	if (!(radio->get_capabilities(net_if_get_device(iface)) & IEEE802154_HW_FILTER) &&
-	    !ieeee802154_check_dst_addr(iface, &mpdu.mhr)) {
+	if (!ieee802154_filter(iface, &mpdu.mhr)) {
 		return NET_DROP;
 	}
 
-	fs = mpdu.mhr.fs;
+	frame_control = &mpdu.mhr.frame_control;
 
-	if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_ACK) {
+	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_ACK) {
 		return NET_DROP;
 	}
 
-	if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_BEACON) {
+	/* Section 6.7.2: "The device shall process the frame using the incoming
+	 * frame security procedure [...].
+	 */
+	if (!ieee802154_incoming_security_procedure(iface, pkt, &mpdu)) {
+		return NET_DROP;
+	}
+
+	if (!ieee802154_parse_mac_payload(&mpdu)) {
+		return NET_DROP;
+	}
+
+	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_BEACON) {
 		verdict = ieee802154_handle_beacon(iface, &mpdu, net_pkt_ieee802154_lqi(pkt));
 		if (verdict == NET_CONTINUE) {
 			net_pkt_unref(pkt);
@@ -395,11 +455,7 @@ static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pk
 		return verdict;
 	}
 
-	if (ieee802154_is_scanning(iface)) {
-		return NET_DROP;
-	}
-
-	if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
+	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
 		verdict = ieee802154_handle_mac_command(iface, &mpdu);
 		if (verdict == NET_DROP) {
 			return verdict;
@@ -412,12 +468,12 @@ static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pk
 
 	is_broadcast = false;
 
-	if (fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
+	if (frame_control->dst_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
 		struct ieee802154_address_field *dst_addr = mpdu.mhr.dst_addr;
 		uint16_t short_dst_addr;
 
-		short_dst_addr = fs->fc.pan_id_comp ? dst_addr->comp.addr.short_addr
-						    : dst_addr->plain.addr.short_addr;
+		short_dst_addr = frame_control->has_dst_pan ? dst_addr->plain.addr.short_addr
+							    : dst_addr->comp.addr.short_addr;
 		is_broadcast = short_dst_addr == IEEE802154_BROADCAST_ADDRESS;
 	}
 
@@ -426,30 +482,26 @@ static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pk
 		ieee802154_acknowledge(iface, &mpdu);
 	}
 
-	if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
+	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
 		net_pkt_unref(pkt);
 		return NET_OK;
-	}
-
-	if (!ieee802154_decipher_data_frame(iface, pkt, &mpdu)) {
-		return NET_DROP;
 	}
 
 	/* Setting L2 addresses must be done after packet authentication and internal
 	 * packet handling as it will mangle the package header to comply with upper
 	 * network layers' (POSIX) requirement to represent network addresses in big endian.
 	 */
-	swap_and_set_pkt_ll_addr(net_pkt_lladdr_src(pkt), !fs->fc.pan_id_comp,
-				 fs->fc.src_addr_mode, mpdu.mhr.src_addr);
+	swap_and_set_pkt_ll_addr(net_pkt_lladdr_src(pkt), frame_control->has_src_pan,
+				 frame_control->src_addr_mode, mpdu.mhr.src_addr);
 
-	swap_and_set_pkt_ll_addr(net_pkt_lladdr_dst(pkt), true, fs->fc.dst_addr_mode,
-				 mpdu.mhr.dst_addr);
+	swap_and_set_pkt_ll_addr(net_pkt_lladdr_dst(pkt), frame_control->has_dst_pan,
+				 frame_control->dst_addr_mode, mpdu.mhr.dst_addr);
 
 	net_pkt_set_ll_proto_type(pkt, ETH_P_IEEE802154);
 
 	pkt_hexdump(RX_PKT_TITLE " (with ll)", pkt, true);
 
-	ll_hdr_len = (uint8_t *)mpdu.payload - net_pkt_data(pkt);
+	ll_hdr_len = (uint8_t *)mpdu.mac_payload - net_pkt_data(pkt);
 	net_buf_pull(pkt->buffer, ll_hdr_len);
 
 #ifdef CONFIG_NET_6LO
@@ -473,6 +525,7 @@ static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pk
 static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	struct ieee802154_frame_params params = {0};
 	uint8_t ll_hdr_len = 0, authtag_len = 0;
 	static struct net_buf *frame_buf;
 	static struct net_buf *pkt_buf;
@@ -515,9 +568,11 @@ static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 	}
 
 	if (!send_raw) {
-		ieee802154_compute_header_and_authtag_len(iface, net_pkt_lladdr_dst(pkt),
-							  net_pkt_lladdr_src(pkt), &ll_hdr_len,
-							  &authtag_len);
+		if (ieee802154_get_data_frame_params(ctx, net_pkt_lladdr_dst(pkt),
+						     net_pkt_lladdr_src(pkt), &params, &ll_hdr_len,
+						     &authtag_len)) {
+			return -EINVAL;
+		}
 
 #ifdef CONFIG_NET_6LO
 #ifdef CONFIG_NET_L2_IEEE802154_FRAGMENT
@@ -562,9 +617,8 @@ static int ieee802154_send(struct net_if *iface, struct net_pkt *pkt)
 		__ASSERT_NO_MSG(authtag_len <= net_buf_tailroom(frame_buf));
 		net_buf_add(frame_buf, authtag_len);
 
-		if (!(send_raw || ieee802154_create_data_frame(ctx, net_pkt_lladdr_dst(pkt),
-							       net_pkt_lladdr_src(pkt),
-							       frame_buf, ll_hdr_len))) {
+		if (!(send_raw || ieee802154_create_data_frame(ctx, &params, frame_buf, ll_hdr_len,
+							       authtag_len))) {
 			return -EINVAL;
 		}
 

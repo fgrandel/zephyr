@@ -99,57 +99,65 @@ void ieee802154_security_teardown_session(struct ieee802154_security_ctx *sec_ct
 	sec_ctx->level = IEEE802154_SECURITY_LEVEL_NONE;
 }
 
-static void prepare_cipher_aead_pkt(uint8_t *frame, uint8_t level, uint8_t ll_hdr_len,
-				    uint8_t payload_len, uint8_t authtag_len,
-				    struct cipher_aead_pkt *apkt, struct cipher_pkt *pkt)
+static bool prepare_aead(int frame_type, uint8_t *frame, uint8_t level, uint8_t ll_hdr_len,
+			 uint8_t payload_len, uint8_t authtag_len, uint16_t pan_id,
+			 struct ieee802154_address *src_addr, int src_addr_mode,
+			 uint32_t frame_counter, struct cipher_aead_pkt *apkt,
+			 struct cipher_pkt *pkt, uint8_t nonce[13])
 {
-	bool is_authenticated;
 	bool is_encrypted;
+	uint8_t out_buf_offset;
 
-	__ASSERT_NO_MSG(level != IEEE802154_SECURITY_LEVEL_ENC);
+	__ASSERT_NO_MSG(level != IEEE802154_SECURITY_LEVEL_ENC &&
+			level != IEEE802154_SECURITY_LEVEL_NONE);
+
+	if (src_addr_mode != IEEE802154_ADDR_MODE_EXTENDED) {
+		/* TODO: Handle src short address.
+		 * This will require to look up in nbr cache with short addr
+		 * in order to get the extended address related to it.
+		 */
+		return false;
+	}
+
+	memcpy(nonce, src_addr, IEEE802154_EXT_ADDR_LENGTH);
+	sys_put_be32(frame_counter, &nonce[8]);
+	nonce[12] = level;
 
 	is_encrypted = level > IEEE802154_SECURITY_LEVEL_ENC;
-	is_authenticated = level != IEEE802154_SECURITY_LEVEL_NONE;
 
 	/* See section 9.3.5.3 */
 	pkt->in_buf = is_encrypted && payload_len ? frame + ll_hdr_len : NULL;
 	pkt->in_len = is_encrypted ? payload_len : 0;
 
 	/* See section 9.3.5.4 */
-	uint8_t out_buf_offset = is_encrypted ? ll_hdr_len : ll_hdr_len + payload_len;
-	uint8_t auth_len = is_authenticated ? out_buf_offset : 0;
+	out_buf_offset = is_encrypted ? ll_hdr_len : ll_hdr_len + payload_len;
 
 	pkt->out_buf = frame + out_buf_offset;
 	pkt->out_buf_max = (is_encrypted ? payload_len : 0) + authtag_len;
 
-	apkt->ad = is_authenticated ? frame : NULL;
-	apkt->ad_len = auth_len;
-	apkt->tag = is_authenticated ? frame + ll_hdr_len + payload_len : NULL;
+	apkt->ad = frame;
+	apkt->ad_len = out_buf_offset;
+	apkt->tag = frame + ll_hdr_len + payload_len;
 	apkt->pkt = pkt;
+
+	return true;
 }
 
-bool ieee802154_decrypt_auth(struct ieee802154_security_ctx *sec_ctx, uint8_t *frame,
-			     uint8_t ll_hdr_len, uint8_t payload_len, uint8_t authtag_len,
-			     uint8_t *src_ext_addr, uint32_t frame_counter)
+bool ieee802154_decrypt_auth(struct ieee802154_security_ctx *sec_ctx, int frame_type,
+			     uint8_t *frame, uint8_t ll_hdr_len, uint8_t payload_len,
+			     uint8_t authtag_len, uint16_t pan_id,
+			     struct ieee802154_address *src_addr, int src_addr_mode,
+			     uint32_t frame_counter)
 {
 	struct cipher_aead_pkt apkt;
 	struct cipher_pkt pkt;
 	uint8_t nonce[13];
-	uint8_t level;
 	int ret;
 
-	if (!sec_ctx || sec_ctx->level == IEEE802154_SECURITY_LEVEL_NONE) {
-		return true;
+	if (!prepare_aead(frame_type, frame, sec_ctx->level, ll_hdr_len, payload_len, authtag_len,
+			  pan_id, src_addr, src_addr_mode, frame_counter, &apkt, &pkt, nonce)) {
+		return false;
 	}
-
-	level = sec_ctx->level;
-
-	/* See section 9.3.3.1 */
-	memcpy(nonce, src_ext_addr, IEEE802154_EXT_ADDR_LENGTH);
-	sys_put_be32(frame_counter, &nonce[8]);
-	nonce[12] = level;
-
-	prepare_cipher_aead_pkt(frame, level, ll_hdr_len, payload_len, authtag_len, &apkt, &pkt);
 
 	ret = cipher_ccm_op(&sec_ctx->dec, &apkt, nonce);
 	if (ret) {
@@ -161,47 +169,28 @@ bool ieee802154_decrypt_auth(struct ieee802154_security_ctx *sec_ctx, uint8_t *f
 	return true;
 }
 
-bool ieee802154_encrypt_auth(struct ieee802154_security_ctx *sec_ctx, uint8_t *frame,
-			     uint8_t ll_hdr_len, uint8_t payload_len, uint8_t authtag_len,
-			     uint8_t *src_ext_addr)
+bool ieee802154_encrypt_auth(struct ieee802154_security_ctx *sec_ctx, int frame_type,
+			     uint8_t *frame, uint8_t ll_hdr_len, uint8_t payload_len,
+			     uint8_t authtag_len, uint16_t pan_id,
+			     struct ieee802154_address *src_addr, int src_addr_mode,
+			     uint32_t frame_counter)
 {
 	struct cipher_aead_pkt apkt;
 	struct cipher_pkt pkt;
 	uint8_t nonce[13];
-	uint8_t level;
 	int ret;
 
-	if (!sec_ctx || sec_ctx->level == IEEE802154_SECURITY_LEVEL_NONE) {
-		return true;
-	}
-
-	level = sec_ctx->level;
-
-	if (level == IEEE802154_SECURITY_LEVEL_RESERVED) {
-		NET_DBG("Encryption-only security is deprecated since IEEE 802.15.4-2015.");
+	if (!prepare_aead(frame_type, frame, sec_ctx->level, ll_hdr_len, payload_len, authtag_len,
+			  pan_id, src_addr, src_addr_mode, frame_counter, &apkt, &pkt, nonce)) {
 		return false;
 	}
-
-	if (sec_ctx->frame_counter == 0xffffffff) {
-		NET_ERR("Max frame counter reached. Update key material to reset the counter.");
-		return false;
-	}
-
-	/* See section 9.3.3.1 */
-	memcpy(nonce, src_ext_addr, IEEE802154_EXT_ADDR_LENGTH);
-	sys_put_be32(sec_ctx->frame_counter, &nonce[8]);
-	nonce[12] = level;
-
-	prepare_cipher_aead_pkt(frame, level, ll_hdr_len, payload_len, authtag_len, &apkt, &pkt);
 
 	ret = cipher_ccm_op(&sec_ctx->enc, &apkt, nonce);
 	if (ret) {
-		NET_ERR("Cannot encrypt/auth (%i): %p %u/%u - fc %u", ret, frame, ll_hdr_len,
-			payload_len, sec_ctx->frame_counter);
+		NET_DBG("Cannot encrypt/auth (%i): %p %u/%u - fc/asn %" PRIu64, ret, frame,
+			ll_hdr_len, payload_len, frame_counter);
 		return false;
 	}
-
-	sec_ctx->frame_counter++;
 
 	return true;
 }

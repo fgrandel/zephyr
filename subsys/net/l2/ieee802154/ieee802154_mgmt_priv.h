@@ -16,11 +16,10 @@
 
 #ifdef CONFIG_NET_MGMT
 
-static inline bool ieee802154_is_scanning(struct net_if *iface)
+/* requires the context to be locked */
+static inline bool ieee802154_is_scanning(struct ieee802154_context *ctx)
 {
-	struct ieee802154_context *ctx = net_if_l2_data(iface);
-
-	return !(!ctx->scan_ctx);
+	return ctx->scan_ctx;
 }
 
 static inline void ieee802154_mgmt_init(struct net_if *iface)
