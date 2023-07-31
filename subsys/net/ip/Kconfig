@@ -17,6 +17,19 @@ config NET_IP
 config NET_CONNECTION_SOCKETS
 	bool
 
+# Hidden option enabled whenever a neighbour cache is required.
+config NET_NBR_CACHE
+	bool
+	default y if NET_IPV6_NBR_CACHE
+
+if NET_NBR_CACHE
+module = NET_NBR_CACHE
+module-dep = NET_LOG
+module-str = Log level for protocol-independent parts of the neighbor cache
+module-help = Enables protocol-independent Neighbor Cache code to output debug messages.
+source "subsys/net/Kconfig.template.log_config.net"
+endif
+
 config NET_NATIVE
 	bool "Native network stack support"
 	default y

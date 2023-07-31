@@ -7,7 +7,7 @@
  */
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(net_nbr, CONFIG_NET_IPV6_NBR_CACHE_LOG_LEVEL);
+LOG_MODULE_REGISTER(net_nbr, CONFIG_NET_NBR_CACHE_LOG_LEVEL);
 
 #include <errno.h>
 
@@ -17,16 +17,23 @@ LOG_MODULE_REGISTER(net_nbr, CONFIG_NET_IPV6_NBR_CACHE_LOG_LEVEL);
 
 #include "nbr.h"
 
-NET_NBR_LLADDR_INIT(net_neighbor_lladdr, CONFIG_NET_IPV6_MAX_NEIGHBORS);
+#ifdef CONFIG_NET_IPV6_MAX_NEIGHBORS
+#define IPV6_MAX_NEIGHBORS CONFIG_NET_IPV6_MAX_NEIGHBORS
+#else
+#define IPV6_MAX_NEIGHBORS 0
+#endif
+#define MAX_NEIGHBORS (IPV6_MAX_NEIGHBORS)
 
-#if defined(CONFIG_NET_IPV6_NBR_CACHE_LOG_LEVEL_DBG)
+NET_NBR_LLADDR_INIT(net_neighbor_lladdr, MAX_NEIGHBORS);
+
+#if defined(CONFIG_NET_NBR_CACHE_LOG_LEVEL_DBG)
 void net_nbr_unref_debug(struct net_nbr *nbr, const char *caller, int line)
 #define net_nbr_unref(nbr) net_nbr_unref_debug(nbr, __func__, __LINE__)
 #else
 void net_nbr_unref(struct net_nbr *nbr)
 #endif
 {
-#if defined(CONFIG_NET_IPV6_NBR_CACHE_LOG_LEVEL_DBG)
+#if defined(CONFIG_NET_NBR_CACHE_LOG_LEVEL_DBG)
 	NET_DBG("nbr %p ref %u (%s():%d)", nbr, nbr->ref - 1, caller, line);
 #else
 	NET_DBG("nbr %p ref %u", nbr, nbr->ref - 1);
@@ -40,14 +47,14 @@ void net_nbr_unref(struct net_nbr *nbr)
 	}
 }
 
-#if defined(CONFIG_NET_IPV6_NBR_CACHE_LOG_LEVEL_DBG)
+#if defined(CONFIG_NET_NBR_CACHE_LOG_LEVEL_DBG)
 struct net_nbr *net_nbr_ref_debug(struct net_nbr *nbr, const char *caller,
 				  int line)
 #else
 struct net_nbr *net_nbr_ref(struct net_nbr *nbr)
 #endif
 {
-#if defined(CONFIG_NET_IPV6_NBR_CACHE_LOG_LEVEL_DBG)
+#if defined(CONFIG_NET_NBR_CACHE_LOG_LEVEL_DBG)
 	NET_DBG("nbr %p ref %u (%s():%d)", nbr, nbr->ref + 1, caller, line);
 #else
 	NET_DBG("nbr %p ref %u", nbr, nbr->ref + 1);
@@ -59,7 +66,7 @@ struct net_nbr *net_nbr_ref(struct net_nbr *nbr)
 
 static inline struct net_nbr *get_nbr(struct net_nbr *start, int idx)
 {
-	NET_ASSERT(idx < CONFIG_NET_IPV6_MAX_NEIGHBORS);
+	NET_ASSERT(idx < MAX_NEIGHBORS);
 
 	return (struct net_nbr *)((uint8_t *)start +
 			((sizeof(struct net_nbr) +
@@ -92,7 +99,7 @@ int net_nbr_link(struct net_nbr *nbr, struct net_if *iface,
 		return -EALREADY;
 	}
 
-	for (i = 0; i < CONFIG_NET_IPV6_MAX_NEIGHBORS; i++) {
+	for (i = 0; i < MAX_NEIGHBORS; i++) {
 		if (avail < 0 && !net_neighbor_lladdr[i].ref) {
 			avail = i;
 		}
@@ -141,7 +148,7 @@ int net_nbr_unlink(struct net_nbr *nbr, struct net_linkaddr *lladdr)
 		return -EALREADY;
 	}
 
-	NET_ASSERT(nbr->idx < CONFIG_NET_IPV6_MAX_NEIGHBORS);
+	NET_ASSERT(nbr->idx < MAX_NEIGHBORS);
 	NET_ASSERT(net_neighbor_lladdr[nbr->idx].ref > 0);
 
 	net_neighbor_lladdr[nbr->idx].ref--;
@@ -179,9 +186,8 @@ struct net_nbr *net_nbr_lookup(struct net_nbr_table *table,
 
 struct net_linkaddr_storage *net_nbr_get_lladdr(uint8_t idx)
 {
-	NET_ASSERT(idx < CONFIG_NET_IPV6_MAX_NEIGHBORS,
-		   "idx %d >= max %d", idx,
-		   CONFIG_NET_IPV6_MAX_NEIGHBORS);
+	NET_ASSERT(idx < MAX_NEIGHBORS,
+		   "idx %d >= max %d", idx, MAX_NEIGHBORS);
 
 	return &net_neighbor_lladdr[idx].lladdr;
 }
@@ -207,7 +213,7 @@ void net_nbr_clear_table(struct net_nbr_table *table)
 
 void net_nbr_print(struct net_nbr_table *table)
 {
-	if (CONFIG_NET_IPV6_NBR_CACHE_LOG_LEVEL >= LOG_LEVEL_DBG) {
+	if (CONFIG_NET_NBR_CACHE_LOG_LEVEL >= LOG_LEVEL_DBG) {
 		int i;
 
 		for (i = 0; i < table->nbr_count; i++) {
