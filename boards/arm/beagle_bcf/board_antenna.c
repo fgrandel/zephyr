@@ -19,6 +19,8 @@
 #include <driverlib/ioc.h>
 #include <driverlib/rom.h>
 
+#include <kernel/zephyr/dpl/dpl.h>
+
 /* DIOs for RF antenna paths */
 #define BOARD_RF_HIGH_PA   29		/* TODO: pull from DT */
 #define BOARD_RF_SUB1GHZ   30		/* TODO: pull from DT */
@@ -34,8 +36,8 @@ const RFCC26XX_HWAttrsV2 RFCC26XX_hwAttrs = {
 	/* RF driver callback for custom antenna switching */
 	.globalCallback = board_cc13xx_rf_callback,
 	/* Subscribe to events */
-	.globalEventMask = (RF_GlobalEventRadioSetup |
-			RF_GlobalEventRadioPowerDown),
+	.globalEventMask = (RF_GlobalEventRadioSetup | RF_GlobalEventRadioPowerDown |
+			    CC13XX_CC26XX_GLOBAL_RF_EVENT_MASK),
 };
 
 /**
@@ -106,11 +108,13 @@ void board_cc13xx_rf_callback(RF_Handle client, RF_GlobalEvent events, void *arg
 					IOC_PORT_GPIO, IOC_IOMODE_NORMAL);
 			GPIO_setOutputEnableDio(BOARD_RF_SUB1GHZ, GPIO_OUTPUT_ENABLE);
 		}
-	} else {
+	} else if (events & RF_GlobalEventRadioPowerDown) {
 		/* Reset the IO multiplexer to GPIO functionality */
 		IOCPortConfigureSet(BOARD_RF_HIGH_PA,
 				IOC_PORT_GPIO, IOC_IOMODE_NORMAL);
 		IOCPortConfigureSet(BOARD_RF_SUB1GHZ,
 				IOC_PORT_GPIO, IOC_IOMODE_NORMAL);
 	}
+
+	cc13xx_cc26xx_global_rf_callback(client, events, arg);
 }

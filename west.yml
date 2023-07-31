@@ -23,6 +23,8 @@ manifest:
       url-base: https://github.com/zephyrproject-rtos
     - name: babblesim
       url-base: https://github.com/BabbleSim
+    - name: fgrandel
+      url-base: https://github.com/fgrandel
 
   group-filter: [-babblesim]
 
@@ -245,7 +247,8 @@ manifest:
       groups:
         - hal
     - name: hal_ti
-      revision: b85f86e51fc4d47c4c383d320d64d52d4d371ae4
+      remote: fgrandel
+      revision: feat/rf-callback-hook
       path: modules/hal/ti
       groups:
         - hal

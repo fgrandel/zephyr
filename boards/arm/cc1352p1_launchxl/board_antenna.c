@@ -20,6 +20,8 @@
 #include <driverlib/rom.h>
 #include <driverlib/interrupt.h>
 
+#include <kernel/zephyr/dpl/dpl.h>
+
 /* custom pinctrl states for the antenna mux */
 #define PINCTRL_STATE_ANT_24G		1
 #define PINCTRL_STATE_ANT_24G_PA	2
@@ -43,8 +45,8 @@ const RFCC26XX_HWAttrsV2 RFCC26XX_hwAttrs = {
 	/* RF driver callback for custom antenna switching */
 	.globalCallback = board_cc13xx_rf_callback,
 	/* Subscribe to events */
-	.globalEventMask = (RF_GlobalEventRadioSetup |
-			RF_GlobalEventRadioPowerDown),
+	.globalEventMask = (RF_GlobalEventRadioSetup | RF_GlobalEventRadioPowerDown |
+			    CC13XX_CC26XX_GLOBAL_RF_EVENT_MASK),
 };
 
 PINCTRL_DT_INST_DEFINE(0);
@@ -129,7 +131,9 @@ void board_cc13xx_rf_callback(RF_Handle client, RF_GlobalEvent events, void *arg
 				gpio_pin_configure_dt(&ant_gpios[BOARD_ANT_GPIO_24G], 1);
 			}
 		}
-	} else {
+	} else if (events & RF_GlobalEventRadioPowerDown) {
 		pinctrl_apply_state(ant_pcfg, PINCTRL_STATE_DEFAULT);
 	}
+
+	cc13xx_cc26xx_global_rf_callback(client, events, arg);
 }
