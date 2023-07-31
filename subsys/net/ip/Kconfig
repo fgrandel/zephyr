@@ -20,7 +20,7 @@ config NET_CONNECTION_SOCKETS
 # Hidden option enabled whenever a neighbour cache is required.
 config NET_NBR_CACHE
 	bool
-	default y if NET_IPV6_NBR_CACHE
+	default y if NET_IPV6_NBR_CACHE || NET_L2_IEEE802154_NBR_CACHE
 
 if NET_NBR_CACHE
 module = NET_NBR_CACHE

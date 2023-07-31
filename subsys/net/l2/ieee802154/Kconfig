@@ -154,6 +154,23 @@ config NET_L2_IEEE802154_TSCH
 	  mode (MAC PIB attribute: macTschEnabled). This is EXPERIMENTAL work
 	  in progress.
 
+if NET_L2_IEEE802154_TSCH
+
+config NET_L2_IEEE802154_MAX_NEIGHBORS
+	int "The maximum number of neighbors reachable from a IEEE 802.15.4 node"
+	default 8
+	range 1 254
+	help
+	  The value depends on your network needs. Currently only the TSCH
+	  protocol stores per-neighbour information.
+
+endif # NET_L2_IEEE802154_TSCH
+
+# Hidden option enabled when an IEEE 802.15.4 neighbour cache is required.
+config NET_L2_IEEE802154_NBR_CACHE
+	bool
+	default y if NET_L2_IEEE802154_TSCH
+
 source "subsys/net/l2/ieee802154/Kconfig.radio"
 
 endif
