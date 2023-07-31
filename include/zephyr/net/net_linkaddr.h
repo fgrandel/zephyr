@@ -60,9 +60,11 @@ enum net_link_type {
 } __packed;
 
 /**
- *  @brief Hardware link address structure
+ * @brief Hardware link address structure
  *
- *  Used to hold the link address information
+ * Used to hold the link address information
+ *
+ * @note Cannot be cast to @ref net_linkaddr_storage, see there.
  */
 struct net_linkaddr {
 	/** The array of byte representing the address */
@@ -81,9 +83,9 @@ struct net_linkaddr {
  *  Used to hold the link address information. This variant is needed
  *  when we have to store the link layer address.
  *
- *  Note that you cannot cast this to net_linkaddr as uint8_t * is
- *  handled differently than uint8_t addr[] and the fields are purposely
- *  in different order.
+ *  @note You cannot cast this to net_linkaddr as uint8_t * is handled
+ *  differently than uint8_t addr[] and the fields are purposely in different
+ *  order.
  */
 struct net_linkaddr_storage {
 	/** What kind of address is this for */

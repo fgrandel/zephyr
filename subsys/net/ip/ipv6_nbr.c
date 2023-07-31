@@ -82,8 +82,8 @@ static void ipv6_nd_restart_reachable_timer(struct net_nbr *nbr, int64_t time);
 #define DELAY_FIRST_PROBE_TIME (5 * MSEC_PER_SEC)
 #define RETRANS_TIMER 1000 /* ms */
 
-extern void net_neighbor_data_remove(struct net_nbr *nbr);
-extern void net_neighbor_table_clear(struct net_nbr_table *table);
+static void net_neighbor_data_remove(struct net_nbr *nbr);
+static void net_neighbor_table_clear(struct net_nbr_table *table);
 
 /** Neighbor Solicitation reply timer */
 static struct k_work_delayable ipv6_ns_reply_timer;
@@ -647,14 +647,14 @@ struct net_nbr *net_ipv6_nbr_add(struct net_if *iface,
 	return nbr;
 }
 
-void net_neighbor_data_remove(struct net_nbr *nbr)
+static void net_neighbor_data_remove(struct net_nbr *nbr)
 {
 	NET_DBG("Neighbor %p removed", nbr);
 
 	return;
 }
 
-void net_neighbor_table_clear(struct net_nbr_table *table)
+static void net_neighbor_table_clear(struct net_nbr_table *table)
 {
 	NET_DBG("Neighbor table %p cleared", table);
 }

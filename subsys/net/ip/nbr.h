@@ -76,7 +76,7 @@ struct net_nbr {
 
 /* This is an array of struct net_nbr + some additional data */
 #define NET_NBR_POOL_INIT(_name, _count, _size, _remove, _extra_size)	\
-	struct {							\
+	static struct {							\
 		struct net_nbr nbr;					\
 		uint8_t data[ROUND_UP(_size, 4)] __net_nbr_align;	\
 		uint8_t extra[ROUND_UP(_extra_size, 4)] __net_nbr_align;\
