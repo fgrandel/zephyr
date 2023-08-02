@@ -1,0 +1,23 @@
+/ {
+	chosen {
+		zephyr,ieee802154 = &ieee802154g;
+		zephyr,console = &rtt0;
+	};
+
+	rtt0: rtt_chan0 {
+		compatible = "segger,rtt-uart";
+		status = "okay";
+	};
+};
+
+/* &radio {
+	debug-pins = "all";
+}; */
+
+&ieee802154 {
+	status = "disabled";
+};
+
+&ieee802154g {
+	status = "okay";
+};
