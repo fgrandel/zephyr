@@ -12,42 +12,8 @@
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/sys_clock.h>
 
-#ifdef CONFIG_SYS_CLOCK_EXISTS
-static struct k_timeout_state sys_clock_timeout_state = {
-	.list = SYS_DLIST_STATIC_INIT(&sys_clock_timeout_state.list),
-};
-
-static inline uint64_t sys_clock_elapsed64(void)
-{
-	return sys_clock_elapsed();
-}
-
-static inline void sys_clock_set_timeout64(int64_t ticks, bool idle)
-{
-	sys_clock_set_timeout(ticks, idle);
-}
-
-const static struct k_timeout_api sys_clock_timeout_api = {
-	.elapsed = sys_clock_elapsed64,
-	.set_timeout = sys_clock_set_timeout64,
-	.state = &sys_clock_timeout_state,
-};
-#endif
-
 #define MAX_WAIT (IS_ENABLED(CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE) \
 		  ? K_TICKS_FOREVER : INT_MAX)
-
-#if defined(CONFIG_SYS_CLOCK_EXISTS) && defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
-int z_clock_hw_cycles_per_sec = CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC;
-
-#ifdef CONFIG_USERSPACE
-static inline int z_vrfy_sys_clock_hw_cycles_per_sec_runtime_get(void)
-{
-	return z_impl_sys_clock_hw_cycles_per_sec_runtime_get();
-}
-#include <syscalls/sys_clock_hw_cycles_per_sec_runtime_get_mrsh.c>
-#endif /* CONFIG_USERSPACE */
-#endif /* CONFIG_SYS_CLOCK_EXISTS && CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME */
 
 static struct _timeout *z_timeout_q_first(const struct k_timeout_api *api)
 {
@@ -150,6 +116,8 @@ static void z_timeout_q_add_timeout(const struct k_timeout_api *api, struct _tim
 			to->dticks -= t->dticks;
 		}
 
+		__ASSERT_NO_MSG(to->dticks >= 0);
+
 		if (t == NULL) {
 			sys_dlist_append(&api->state->list, &to->node);
 		}
@@ -159,13 +127,6 @@ static void z_timeout_q_add_timeout(const struct k_timeout_api *api, struct _tim
 		}
 	}
 }
-
-#ifdef CONFIG_SYS_CLOCK_EXISTS
-void z_add_timeout(struct _timeout *to, _timeout_func_t fn, k_timeout_t timeout)
-{
-	z_timeout_q_add_timeout(&sys_clock_timeout_api, to, fn, timeout);
-}
-#endif
 
 static int z_timeout_q_abort_timeout(const struct k_timeout_api *api, struct _timeout *to) {
 	int ret = -EINVAL;
@@ -179,13 +140,6 @@ static int z_timeout_q_abort_timeout(const struct k_timeout_api *api, struct _ti
 
 	return ret;
 }
-
-#ifdef CONFIG_SYS_CLOCK_EXISTS
-int z_abort_timeout(struct _timeout *to)
-{
-	return z_timeout_q_abort_timeout(&sys_clock_timeout_api, to);
-}
-#endif
 
 /* must be locked */
 static k_ticks_t z_timeout_q_timeout_remaining(const struct k_timeout_api *api, const struct _timeout *timeout)
@@ -206,31 +160,6 @@ static k_ticks_t z_timeout_q_timeout_remaining(const struct k_timeout_api *api, 
 	return ticks - z_timeout_q_elapsed(api);
 }
 
-#ifdef CONFIG_SYS_CLOCK_EXISTS
-k_ticks_t z_timeout_remaining(const struct _timeout *timeout)
-{
-	k_ticks_t ticks = 0;
-
-	K_SPINLOCK(&sys_clock_timeout_api.state->lock)
-	{
-			ticks = z_timeout_q_timeout_remaining(&sys_clock_timeout_api, timeout);
-	}
-
-	return ticks;
-}
-
-k_ticks_t z_timeout_expires(const struct _timeout *timeout)
-{
-	k_ticks_t ticks = 0;
-
-	K_SPINLOCK(&sys_clock_timeout_api.state->lock) {
-		ticks = sys_clock_timeout_api.state->curr_tick + z_timeout_q_timeout_remaining(&sys_clock_timeout_api, timeout);
-	}
-
-	return ticks;
-}
-#endif
-
 static int64_t z_timeout_q_get_next_timeout_expiry(const struct k_timeout_api *api)
 {
 	int64_t ret = (int64_t)K_TICKS_FOREVER;
@@ -241,13 +170,6 @@ static int64_t z_timeout_q_get_next_timeout_expiry(const struct k_timeout_api *a
 	return ret;
 
 }
-
-#ifdef CONFIG_SYS_CLOCK_EXISTS
-int32_t z_get_next_timeout_expiry(void)
-{
-	return (int32_t)z_timeout_q_get_next_timeout_expiry(&sys_clock_timeout_api);
-}
-#endif
 
 /* Must be called with the the timeout instance lock held */
 static void z_timeout_q_timeout_announce(const struct k_timeout_api *api, uint64_t ticks)
@@ -301,18 +223,6 @@ static void z_timeout_q_timeout_announce(const struct k_timeout_api *api, uint64
 	k_spin_unlock(&state->lock, key);
 }
 
-#ifdef CONFIG_SYS_CLOCK_EXISTS
-void sys_clock_announce(int32_t ticks)
-{
-	__ASSERT_NO_MSG(ticks >= 0);
-	z_timeout_q_timeout_announce(&sys_clock_timeout_api, ticks);
-
-#ifdef CONFIG_TIMESLICING
-	z_time_slice();
-#endif
-}
-#endif
-
 static uint64_t z_timeout_q_tick_get(const struct k_timeout_api *api)
 {
 	uint64_t t = 0U;
@@ -324,6 +234,88 @@ static uint64_t z_timeout_q_tick_get(const struct k_timeout_api *api)
 }
 
 #ifdef CONFIG_SYS_CLOCK_EXISTS
+static struct k_timeout_state sys_clock_timeout_state = {
+	.list = SYS_DLIST_STATIC_INIT(&sys_clock_timeout_state.list),
+};
+
+static inline uint64_t sys_clock_elapsed64(void)
+{
+	return sys_clock_elapsed();
+}
+
+static inline void sys_clock_set_timeout64(int64_t ticks, bool idle)
+{
+	sys_clock_set_timeout(ticks, idle);
+}
+
+const static struct k_timeout_api sys_clock_timeout_api = {
+	.elapsed = sys_clock_elapsed64,
+	.set_timeout = sys_clock_set_timeout64,
+	.state = &sys_clock_timeout_state,
+};
+
+#if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
+int z_clock_hw_cycles_per_sec = CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC;
+
+#ifdef CONFIG_USERSPACE
+static inline int z_vrfy_sys_clock_hw_cycles_per_sec_runtime_get(void)
+{
+	return z_impl_sys_clock_hw_cycles_per_sec_runtime_get();
+}
+#include <syscalls/sys_clock_hw_cycles_per_sec_runtime_get_mrsh.c>
+#endif /* CONFIG_USERSPACE */
+#endif /* CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME */
+
+void z_add_timeout(struct _timeout *to, _timeout_func_t fn, k_timeout_t timeout)
+{
+	z_timeout_q_add_timeout(&sys_clock_timeout_api, to, fn, timeout);
+}
+
+int z_abort_timeout(struct _timeout *to)
+{
+	return z_timeout_q_abort_timeout(&sys_clock_timeout_api, to);
+}
+
+k_ticks_t z_timeout_remaining(const struct _timeout *timeout)
+{
+	k_ticks_t ticks = 0;
+
+	K_SPINLOCK(&sys_clock_timeout_api.state->lock)
+	{
+		ticks = z_timeout_q_timeout_remaining(&sys_clock_timeout_api, timeout);
+	}
+
+	return ticks;
+}
+
+k_ticks_t z_timeout_expires(const struct _timeout *timeout)
+{
+	k_ticks_t ticks = 0;
+
+	K_SPINLOCK(&sys_clock_timeout_api.state->lock)
+	{
+		ticks = sys_clock_timeout_api.state->curr_tick +
+			z_timeout_q_timeout_remaining(&sys_clock_timeout_api, timeout);
+	}
+
+	return ticks;
+}
+
+int32_t z_get_next_timeout_expiry(void)
+{
+	return (int32_t)z_timeout_q_get_next_timeout_expiry(&sys_clock_timeout_api);
+}
+
+void sys_clock_announce(int32_t ticks)
+{
+	__ASSERT_NO_MSG(ticks >= 0);
+	z_timeout_q_timeout_announce(&sys_clock_timeout_api, ticks);
+
+#ifdef CONFIG_TIMESLICING
+	z_time_slice();
+#endif
+}
+
 int64_t sys_clock_tick_get(void)
 {
 	return z_timeout_q_tick_get(&sys_clock_timeout_api);
