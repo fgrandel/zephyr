@@ -1436,6 +1436,24 @@ const char *k_thread_state_str(k_tid_t thread_id, char *buf, size_t buf_size);
  * @cond INTERNAL_HIDDEN
  */
 
+#ifdef CONFIG_TIMEOUT_QUEUE
+struct k_timeout_state {
+	uint64_t curr_tick;
+	sys_dlist_t list;
+	struct k_spinlock lock;
+	/* Ticks left to process in the currently-executing
+	 * z_timeout_q_timeout_announce()
+	 */
+	int announce_remaining;
+};
+
+struct k_timeout_api {
+	uint32_t (*elapsed)(void);
+	void (*set_timeout)(int32_t ticks, bool idle);
+	struct k_timeout_state *state;
+};
+#endif
+
 struct k_timer {
 	/*
 	 * _timeout structure must be first here if we want to use
