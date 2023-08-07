@@ -1444,12 +1444,12 @@ struct k_timeout_state {
 	/* Ticks left to process in the currently-executing
 	 * z_timeout_q_timeout_announce()
 	 */
-	int announce_remaining;
+	uint64_t announce_remaining;
 };
 
 struct k_timeout_api {
-	uint32_t (*elapsed)(void);
-	void (*set_timeout)(int32_t ticks, bool idle);
+	uint64_t (*elapsed)(void);
+	void (*set_timeout)(int64_t ticks, bool idle);
 	struct k_timeout_state *state;
 };
 #endif
