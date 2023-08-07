@@ -81,8 +81,8 @@ static int64_t z_timeout_q_next_timeout(const struct k_timeout_api *api)
 	return MAX(0, diff);
 }
 
-static void z_timeout_q_add_timeout(const struct k_timeout_api *api, struct _timeout *to,
-				    _timeout_func_t fn, k_timeout_t timeout)
+void z_timeout_q_add_timeout(const struct k_timeout_api *api, struct _timeout *to,
+			     _timeout_func_t fn, k_timeout_t timeout)
 {
 	if (K_TIMEOUT_EQ(timeout, K_FOREVER)) {
 		return;
@@ -95,7 +95,7 @@ static void z_timeout_q_add_timeout(const struct k_timeout_api *api, struct _tim
 	__ASSERT(!sys_dnode_is_linked(&to->node), "");
 	to->fn = fn;
 
-	K_SPINLOCK(&api->state->lock) {
+	K_SPINLOCK(&api->state->timeout_lock) {
 		struct _timeout *t;
 
 		if (IS_ENABLED(CONFIG_TIMEOUT_64BIT) &&
@@ -128,10 +128,11 @@ static void z_timeout_q_add_timeout(const struct k_timeout_api *api, struct _tim
 	}
 }
 
-static int z_timeout_q_abort_timeout(const struct k_timeout_api *api, struct _timeout *to) {
+int z_timeout_q_abort_timeout(const struct k_timeout_api *api, struct _timeout *to)
+{
 	int ret = -EINVAL;
 
-	K_SPINLOCK(&api->state->lock) {
+	K_SPINLOCK(&api->state->timeout_lock) {
 		if (sys_dnode_is_linked(&to->node)) {
 			z_timeout_q_remove_timeout(api, to);
 			ret = 0;
@@ -142,7 +143,8 @@ static int z_timeout_q_abort_timeout(const struct k_timeout_api *api, struct _ti
 }
 
 /* must be locked */
-static k_ticks_t z_timeout_q_timeout_remaining(const struct k_timeout_api *api, const struct _timeout *timeout)
+static k_ticks_t z_timeout_q_timeout_remaining(const struct k_timeout_api *api,
+					       const struct _timeout *timeout)
 {
 	k_ticks_t ticks = 0;
 
@@ -164,7 +166,7 @@ static int64_t z_timeout_q_get_next_timeout_expiry(const struct k_timeout_api *a
 {
 	int64_t ret = (int64_t)K_TICKS_FOREVER;
 
-	K_SPINLOCK(&api->state->lock) {
+	K_SPINLOCK(&api->state->timeout_lock) {
 		ret = z_timeout_q_next_timeout(api);
 	}
 	return ret;
@@ -172,11 +174,11 @@ static int64_t z_timeout_q_get_next_timeout_expiry(const struct k_timeout_api *a
 }
 
 /* Must be called with the the timeout instance lock held */
-static void z_timeout_q_timeout_announce(const struct k_timeout_api *api, uint64_t ticks)
+void z_timeout_q_timeout_announce(const struct k_timeout_api *api, uint64_t ticks)
 {
 	struct k_timeout_state *const state = api->state;
 
-	k_spinlock_key_t key = k_spin_lock(&state->lock);
+	k_spinlock_key_t key = k_spin_lock(&state->timeout_lock);
 
 	/* We release the lock around the callbacks below, so on SMP
 	 * systems someone might be already running the loop.  Don't
@@ -186,7 +188,7 @@ static void z_timeout_q_timeout_announce(const struct k_timeout_api *api, uint64
 	 */
 	if (IS_ENABLED(CONFIG_SMP) && (state->announce_remaining != 0)) {
 		state->announce_remaining += ticks;
-		k_spin_unlock(&state->lock, key);
+		k_spin_unlock(&state->timeout_lock, key);
 		return;
 	}
 
@@ -205,9 +207,9 @@ static void z_timeout_q_timeout_announce(const struct k_timeout_api *api, uint64
 		t->dticks = 0;
 		z_timeout_q_remove_timeout(api, t);
 
-		k_spin_unlock(&state->lock, key);
+		k_spin_unlock(&state->timeout_lock, key);
 		t->fn(t);
-		key = k_spin_lock(&state->lock);
+		key = k_spin_lock(&state->timeout_lock);
 		state->announce_remaining -= dt;
 	}
 
@@ -220,24 +222,20 @@ static void z_timeout_q_timeout_announce(const struct k_timeout_api *api, uint64
 
 	api->set_timeout(z_timeout_q_next_timeout(api), false);
 
-	k_spin_unlock(&state->lock, key);
+	k_spin_unlock(&state->timeout_lock, key);
 }
 
-static uint64_t z_timeout_q_tick_get(const struct k_timeout_api *api)
+uint64_t z_timeout_q_tick_get(const struct k_timeout_api *api)
 {
 	uint64_t t = 0U;
 
-	K_SPINLOCK(&api->state->lock) {
+	K_SPINLOCK(&api->state->timeout_lock) {
 		t = api->state->curr_tick + z_timeout_q_elapsed(api);
 	}
 	return t;
 }
 
 #ifdef CONFIG_SYS_CLOCK_EXISTS
-static struct k_timeout_state sys_clock_timeout_state = {
-	.list = SYS_DLIST_STATIC_INIT(&sys_clock_timeout_state.list),
-};
-
 static inline uint64_t sys_clock_elapsed64(void)
 {
 	return sys_clock_elapsed();
@@ -248,11 +246,7 @@ static inline void sys_clock_set_timeout64(int64_t ticks, bool idle)
 	sys_clock_set_timeout(ticks, idle);
 }
 
-const static struct k_timeout_api sys_clock_timeout_api = {
-	.elapsed = sys_clock_elapsed64,
-	.set_timeout = sys_clock_set_timeout64,
-	.state = &sys_clock_timeout_state,
-};
+Z_DEFINE_TIMEOUT_API(sys_clock, sys_clock_elapsed64, sys_clock_set_timeout64);
 
 #if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
 int z_clock_hw_cycles_per_sec = CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC;
@@ -268,21 +262,21 @@ static inline int z_vrfy_sys_clock_hw_cycles_per_sec_runtime_get(void)
 
 void z_add_timeout(struct _timeout *to, _timeout_func_t fn, k_timeout_t timeout)
 {
-	z_timeout_q_add_timeout(&sys_clock_timeout_api, to, fn, timeout);
+	z_timeout_q_add_timeout(&Z_SYS_CLOCK_TIMEOUT_API, to, fn, timeout);
 }
 
 int z_abort_timeout(struct _timeout *to)
 {
-	return z_timeout_q_abort_timeout(&sys_clock_timeout_api, to);
+	return z_timeout_q_abort_timeout(&Z_SYS_CLOCK_TIMEOUT_API, to);
 }
 
 k_ticks_t z_timeout_remaining(const struct _timeout *timeout)
 {
 	k_ticks_t ticks = 0;
 
-	K_SPINLOCK(&sys_clock_timeout_api.state->lock)
+	K_SPINLOCK(&Z_SYS_CLOCK_TIMEOUT_API.state->timeout_lock)
 	{
-		ticks = z_timeout_q_timeout_remaining(&sys_clock_timeout_api, timeout);
+		ticks = z_timeout_q_timeout_remaining(&Z_SYS_CLOCK_TIMEOUT_API, timeout);
 	}
 
 	return ticks;
@@ -292,10 +286,10 @@ k_ticks_t z_timeout_expires(const struct _timeout *timeout)
 {
 	k_ticks_t ticks = 0;
 
-	K_SPINLOCK(&sys_clock_timeout_api.state->lock)
+	K_SPINLOCK(&Z_SYS_CLOCK_TIMEOUT_API.state->timeout_lock)
 	{
-		ticks = sys_clock_timeout_api.state->curr_tick +
-			z_timeout_q_timeout_remaining(&sys_clock_timeout_api, timeout);
+		ticks = Z_SYS_CLOCK_TIMEOUT_API.state->curr_tick +
+			z_timeout_q_timeout_remaining(&Z_SYS_CLOCK_TIMEOUT_API, timeout);
 	}
 
 	return ticks;
@@ -303,13 +297,13 @@ k_ticks_t z_timeout_expires(const struct _timeout *timeout)
 
 int32_t z_get_next_timeout_expiry(void)
 {
-	return (int32_t)z_timeout_q_get_next_timeout_expiry(&sys_clock_timeout_api);
+	return (int32_t)z_timeout_q_get_next_timeout_expiry(&Z_SYS_CLOCK_TIMEOUT_API);
 }
 
 void sys_clock_announce(int32_t ticks)
 {
 	__ASSERT_NO_MSG(ticks >= 0);
-	z_timeout_q_timeout_announce(&sys_clock_timeout_api, ticks);
+	z_timeout_q_timeout_announce(&Z_SYS_CLOCK_TIMEOUT_API, ticks);
 
 #ifdef CONFIG_TIMESLICING
 	z_time_slice();
@@ -318,7 +312,7 @@ void sys_clock_announce(int32_t ticks)
 
 int64_t sys_clock_tick_get(void)
 {
-	return z_timeout_q_tick_get(&sys_clock_timeout_api);
+	return z_timeout_q_tick_get(&Z_SYS_CLOCK_TIMEOUT_API);
 }
 
 uint32_t sys_clock_tick_get_32(void)
@@ -326,7 +320,7 @@ uint32_t sys_clock_tick_get_32(void)
 #ifdef CONFIG_TICKLESS_KERNEL
 	return (uint32_t)sys_clock_tick_get();
 #else
-	return (uint32_t)sys_clock_timeout_api.state->curr_tick;
+	return (uint32_t)Z_SYS_CLOCK_TIMEOUT_API.state->curr_tick;
 #endif
 }
 
@@ -383,7 +377,7 @@ k_timeout_t sys_timepoint_timeout(k_timepoint_t timepoint)
 #ifdef CONFIG_ZTEST
 void z_impl_sys_clock_tick_set(uint64_t tick)
 {
-	sys_clock_timeout_api.state->curr_tick = tick;
+	Z_SYS_CLOCK_TIMEOUT_API.state->curr_tick = tick;
 }
 
 void z_vrfy_sys_clock_tick_set(uint64_t tick)

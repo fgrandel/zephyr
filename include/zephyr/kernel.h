@@ -1440,7 +1440,8 @@ const char *k_thread_state_str(k_tid_t thread_id, char *buf, size_t buf_size);
 struct k_timeout_state {
 	uint64_t curr_tick;
 	sys_dlist_t list;
-	struct k_spinlock lock;
+	struct k_spinlock timeout_lock;
+	struct k_spinlock timer_lock;
 	/* Ticks left to process in the currently-executing
 	 * z_timeout_q_timeout_announce()
 	 */
@@ -1452,7 +1453,14 @@ struct k_timeout_api {
 	void (*set_timeout)(int64_t ticks, bool idle);
 	struct k_timeout_state *state;
 };
-#endif
+
+#define Z_TIMEOUT_API_GET(_name) _timeout_api_##_name
+#endif /* CONFIG_TIMEOUT_QUEUE */
+
+#ifdef CONFIG_SYS_CLOCK_EXISTS
+#define Z_SYS_CLOCK_TIMEOUT_API Z_TIMEOUT_API_GET(sys_clock)
+extern const struct k_timeout_api Z_SYS_CLOCK_TIMEOUT_API;
+#endif /* CONFIG_SYS_CLOCK_EXISTS */
 
 struct k_timer {
 	/*
@@ -1464,6 +1472,8 @@ struct k_timer {
 
 	/* wait queue for the (single) thread waiting on this timer */
 	_wait_q_t wait_q;
+
+	const struct k_timeout_api *timeout_api;
 
 	/* runs in ISR context */
 	void (*expiry_fn)(struct k_timer *timer);
@@ -1490,6 +1500,7 @@ struct k_timer {
 		.fn = z_timer_expiration_handler, \
 		.dticks = 0, \
 	}, \
+	.timeout_api = &Z_SYS_CLOCK_TIMEOUT_API, \
 	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
 	.expiry_fn = expiry, \
 	.stop_fn = stop, \

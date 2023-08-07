@@ -20,12 +20,45 @@
 extern "C" {
 #endif
 
-#ifdef CONFIG_SYS_CLOCK_EXISTS
+#ifdef CONFIG_TIMEOUT_QUEUE
+
+#define Z_TIMEOUT_API_STATE(_name) _timeout_api_##_name##_state
+
+#define Z_TIMEOUT_API_STATE_LIST_PTR(_name) &Z_TIMEOUT_API_STATE(_name).list
+
+#define Z_DEFINE_TIMEOUT_API_STATE(_name)                                                          \
+	static struct k_timeout_state Z_TIMEOUT_API_STATE(_name) = {                               \
+		.list = SYS_DLIST_STATIC_INIT(Z_TIMEOUT_API_STATE_LIST_PTR(_name)),                \
+	}
+
+#define Z_TIMEOUT_API_INITIALIZER(_name, _elapsed, _set_timeout)                                   \
+	{                                                                                          \
+		.elapsed = _elapsed, .set_timeout = _set_timeout,                                  \
+		.state = &Z_TIMEOUT_API_STATE(_name),                                              \
+	}
+
+#define Z_DEFINE_TIMEOUT_API(_name, _elapsed, _set_timeout)                                        \
+	Z_DEFINE_TIMEOUT_API_STATE(_name);                                                         \
+	const struct k_timeout_api Z_TIMEOUT_API_GET(_name) =                                      \
+		Z_TIMEOUT_API_INITIALIZER(_name, _elapsed, _set_timeout)
 
 static inline void z_init_timeout(struct _timeout *to)
 {
 	sys_dnode_init(&to->node);
 }
+
+void z_timeout_q_add_timeout(const struct k_timeout_api *api, struct _timeout *to,
+			     _timeout_func_t fn, k_timeout_t timeout);
+
+int z_timeout_q_abort_timeout(const struct k_timeout_api *api, struct _timeout *to);
+
+uint64_t z_timeout_q_tick_get(const struct k_timeout_api *api);
+
+void z_timeout_q_timeout_announce(const struct k_timeout_api *api, uint64_t ticks);
+
+#endif /* CONFIG_TIMEOUT_QUEUE */
+
+#ifdef CONFIG_SYS_CLOCK_EXISTS
 
 void z_add_timeout(struct _timeout *to, _timeout_func_t fn,
 		   k_timeout_t timeout);
