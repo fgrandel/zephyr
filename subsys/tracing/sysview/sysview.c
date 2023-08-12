@@ -13,7 +13,12 @@
 
 static uint32_t interrupt;
 
-uint32_t sysview_get_timestamp(void)
+__weak uint32_t sysview_get_timestamp_frequency(void)
+{
+	return sys_clock_hw_cycles_per_sec();
+}
+
+__weak uint32_t sysview_get_timestamp(void)
 {
 	return k_cycle_get_32();
 }

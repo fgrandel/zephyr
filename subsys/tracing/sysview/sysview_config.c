@@ -78,15 +78,8 @@ static void send_task_list_cb(void)
 	}
 }
 
-
-static U64 get_time_cb(void)
-{
-	return (U64)k_cycle_get_32();
-}
-
-
 const SEGGER_SYSVIEW_OS_API SYSVIEW_X_OS_TraceAPI = {
-	get_time_cb,
+	NULL,
 	send_task_list_cb,
 };
 
@@ -94,7 +87,7 @@ const SEGGER_SYSVIEW_OS_API SYSVIEW_X_OS_TraceAPI = {
 
 void SEGGER_SYSVIEW_Conf(void)
 {
-	SEGGER_SYSVIEW_Init(sys_clock_hw_cycles_per_sec(),
+	SEGGER_SYSVIEW_Init(sysview_get_timestamp_frequency(),
 			    sys_clock_hw_cycles_per_sec(),
 			    &SYSVIEW_X_OS_TraceAPI, cbSendSystemDesc);
 #if DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_sram), okay)
