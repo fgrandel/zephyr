@@ -608,3 +608,20 @@ const struct net_time_reference_api *ieee802154_cc13xx_cc26xx_net_time_reference
 {
 	return &ieee802154_cc13xx_cc26xx_net_time_reference.api;
 }
+
+/* Network counter resolution tracing. */
+#if defined(CONFIG_SEGGER_SYSTEMVIEW) && !defined(CONFIG_SEGGER_SYSTEMVIEW_BOOT_ENABLE)
+uint32_t sysview_get_timestamp_frequency(void)
+{
+	return HIGHRES_TICKS_PER_SECOND;
+}
+
+inline uint32_t sysview_get_timestamp(void)
+{
+	uint64_t tick;
+
+	(void)get_current_tick(&ieee802154_cc13xx_cc26xx_net_time_reference.counter, &tick);
+
+	return tick;
+}
+#endif
