@@ -41,7 +41,6 @@ static void board_cc13xx_rf_callback(RF_Handle client, RF_GlobalEvent events,
 const RFCC26XX_HWAttrsV2 RFCC26XX_hwAttrs = {
 	.hwiPriority        = INT_PRI_LEVEL7,
 	.swiPriority        = 0,
-	.xoscHfAlwaysNeeded = true,
 	/* RF driver callback for custom antenna switching */
 	.globalCallback = board_cc13xx_rf_callback,
 	/* Subscribe to events */
