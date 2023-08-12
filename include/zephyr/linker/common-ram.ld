@@ -12,6 +12,10 @@
 #endif
 #endif /* NETWORKING */
 
+#if defined(CONFIG_NET_TIME_REFERENCE_CLOCK)
+	ITERABLE_SECTION_RAM(net_time_timer, 4)
+#endif
+
 #if defined(CONFIG_BT_MESH)
 	ITERABLE_SECTION_RAM(bt_mesh_ext_adv, 4)
 #endif
