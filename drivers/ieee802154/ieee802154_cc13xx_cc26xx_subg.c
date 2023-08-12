@@ -17,6 +17,7 @@ LOG_MODULE_REGISTER(ieee802154_cc13xx_cc26xx_subg);
 #include <zephyr/net/ieee802154.h>
 #include <zephyr/net/ieee802154_radio.h>
 #include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_time.h>
 #include <zephyr/random/rand32.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/crc.h>
@@ -31,6 +32,7 @@ LOG_MODULE_REGISTER(ieee802154_cc13xx_cc26xx_subg);
 
 #include <ti/drivers/rf/RF.h>
 
+#include "ieee802154_cc13xx_cc26xx_net_time.h"
 #include "ieee802154_cc13xx_cc26xx_subg.h"
 
 static int drv_start_rx(const struct device *dev);
@@ -302,9 +304,7 @@ static inline int drv_channel_frequency(uint16_t channel, uint16_t *frequency, u
 
 static inline int drv_power_down(void)
 {
-	(void)RF_yield(drv_data->rf_handle);
-
-	return 0;
+	return net_time_counter_may_sleep(ieee802154_cc13xx_cc26xx_net_time_reference_api_get());
 }
 
 static void cmd_prop_tx_adv_callback(RF_Handle h, RF_CmdHandle ch,
@@ -738,6 +738,25 @@ static int ieee802154_cc13xx_cc26xx_subg_attr_get(const struct device *dev,
 		&drv_attr.phy_supported_channels, value);
 }
 
+static net_time_t ieee802154_cc13xx_cc26xx_subg_get_time(const struct device *dev)
+{
+	net_time_t net_time;
+
+	ARG_UNUSED(dev);
+
+	net_time_reference_get_time(ieee802154_cc13xx_cc26xx_net_time_reference_api_get(),
+				    &net_time);
+	return net_time;
+}
+
+static const struct net_time_reference_api *
+ieee802154_cc13xx_cc26xx_subg_get_time_reference(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+
+	return ieee802154_cc13xx_cc26xx_net_time_reference_api_get();
+}
+
 static int ieee802154_cc13xx_cc26xx_subg_start(const struct device *dev)
 {
 	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = dev->data;
@@ -896,6 +915,8 @@ static void ieee802154_cc13xx_cc26xx_subg_iface_init(struct net_if *iface)
 
 	drv_data->iface = iface;
 
+	net_time_reference_init(ieee802154_cc13xx_cc26xx_net_time_reference_api_get(), iface);
+
 	ieee802154_init(iface);
 }
 
@@ -913,6 +934,8 @@ static struct ieee802154_radio_api
 	.stop = ieee802154_cc13xx_cc26xx_subg_stop_if,
 	.configure = ieee802154_cc13xx_cc26xx_subg_configure,
 	.attr_get = ieee802154_cc13xx_cc26xx_subg_attr_get,
+	.get_time = ieee802154_cc13xx_cc26xx_subg_get_time,
+	.get_time_reference = ieee802154_cc13xx_cc26xx_subg_get_time_reference,
 };
 
 static int ieee802154_cc13xx_cc26xx_subg_init(const struct device *dev)
@@ -954,7 +977,15 @@ static int ieee802154_cc13xx_cc26xx_subg_init(const struct device *dev)
 		return -EIO;
 	}
 
-	return drv_power_down(void);
+	/* Do not call drv_power_down() here as this requires the the network
+	 * uptime counter to be initialized which happens later during interface
+	 * initializtion. Powering down the TI driver early on also implicitly
+	 * measures the sleep counter to high resolution counter (RAT0) offset
+	 * required for sleeptimer counter tick estimates.
+	 */
+	(void)RF_yield(drv_data->rf_handle);
+
+	return 0;
 }
 
 static struct ieee802154_cc13xx_cc26xx_subg_data ieee802154_cc13xx_cc26xx_subg_data = {

@@ -10,6 +10,7 @@ zephyr_library_sources_ifdef(CONFIG_IEEE802154_CC13XX_CC26XX
 )
 zephyr_library_sources_ifdef(CONFIG_IEEE802154_CC13XX_CC26XX_SUB_GHZ
   ieee802154_cc13xx_cc26xx_subg.c
+  ieee802154_cc13xx_cc26xx_net_time.c
 )
 zephyr_library_sources_ifdef(CONFIG_IEEE802154_CC2520		ieee802154_cc2520.c)
 zephyr_library_sources_ifdef(CONFIG_IEEE802154_DW1000		ieee802154_dw1000.c)
