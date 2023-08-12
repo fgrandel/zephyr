@@ -15,6 +15,7 @@
 #define __IEEE802154_UTILS_H__
 
 #include <zephyr/net/ieee802154_radio.h>
+#include <zephyr/net/ieee802154_tracing.h>
 #include <zephyr/sys/sflist.h>
 #include <zephyr/sys/util_macro.h>
 
@@ -48,8 +49,9 @@ static inline int ieee802154_radio_cca(struct net_if *iface)
 
 static inline int ieee802154_radio_set_channel(struct net_if *iface, uint16_t channel)
 {
-	const struct ieee802154_radio_api *radio =
-		net_if_get_device(iface)->api;
+	const struct ieee802154_radio_api *radio = net_if_get_device(iface)->api;
+
+	ieee802154_trace_arg(iface, IEEE802154_TRACING_SET_CHANNEL, channel);
 
 	if (!radio) {
 		return -ENOENT;

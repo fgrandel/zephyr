@@ -1,0 +1,18 @@
+Option    ReversePriority
+
+#
+# Types for parameter formatters
+#
+NamedType TimeOut       *="%u ticks" 0=TIMEOUT_NO_WAIT 4294967295=FOREVER
+
+#
+# API Functions
+#
+0     ieee802154_mark
+1     ieee802154_set_channel          iface=%u channel=%u
+2     ieee802154_net_counter_wakeup   iface=%u rat0=%u
+3     ieee802154_net_counter_suspend  iface=%u
+4     ieee802154_net_counter_program  iface=%u rat=%u
+5     ieee802154_net_counter_capture  iface=%u rat=%u
+6     ieee802154_tsch_slot_start
+7     ieee802154_tsch_slot_end

@@ -53,6 +53,11 @@ zephyr_library_sources_ifdef(
   )
 
 zephyr_library_sources_ifdef(
+  CONFIG_SEGGER_SYSTEMVIEW
+  ieee802154_tracing.c
+)
+
+zephyr_library_sources_ifdef(
   CONFIG_NET_L2_IEEE802154_SECURITY
   ieee802154_security.c
   )

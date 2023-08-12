@@ -10,6 +10,7 @@
  */
 
 #include <timeout_q.h>
+#include <zephyr/net/ieee802154_tracing.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_time.h>
@@ -111,7 +112,12 @@ void cc13xx_cc26xx_global_rf_callback(RF_Handle rf_handle, RF_GlobalEvent events
 		&ieee802154_cc13xx_cc26xx_net_time_reference.counter;
 
 	if (events & RF_GlobalEventRadioSetup) {
+		ieee802154_trace_arg(counter->iface, IEEE802154_TRACING_NET_COUNTER_WAKEUP,
+				     counter->cmd_sync_start_rat ? counter->cmd_sync_start_rat->rat0
+								 : 0);
 		rf_operation_chain_cb(counter, (volatile RF_Op *)arg);
+	} else if (events & RF_GlobalEventRadioPowerDown) {
+		ieee802154_trace(counter->iface, IEEE802154_TRACING_NET_COUNTER_SUSPEND);
 	}
 }
 
@@ -213,6 +219,9 @@ static void on_rat_triggered(RF_Handle h, RF_RatHandle rh, RF_EventMask e,
 		&ieee802154_cc13xx_cc26xx_net_time_reference.counter;
 	uint64_t announce = 0;
 
+	ieee802154_trace_arg(counter->iface, IEEE802154_TRACING_NET_COUNTER_CAPTURE,
+			     compare_capture_time);
+
 	K_SPINLOCK(&counter->lock)
 	{
 		counter->announced += counter->dticks;
@@ -295,6 +304,9 @@ static void ieee802154_cc13xx_cc26xx_net_time_counter_set_timeout(int64_t ticks,
 		__ASSERT_NO_MSG(timeout <= UINT32_MAX);
 		counter->rat_overflow_trigger_config.timeout = timeout;
 	}
+
+	ieee802154_trace_arg(counter->iface, IEEE802154_TRACING_NET_COUNTER_PROGRAM,
+			     counter->rat_overflow_trigger_config.timeout);
 
 	rat_handle = RF_ratCompare(counter->rf_handle, &counter->rat_overflow_trigger_config,
 				   NET_TIME_DEBUG_PIN_CONFIG(counter));

@@ -16,6 +16,7 @@ LOG_MODULE_REGISTER(net_ieee802154_tsch, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 
 #include <zephyr/kernel.h>
 #include <zephyr/net/ieee802154_radio.h>
+#include <zephyr/net/ieee802154_tracing.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_time.h>
 #include <zephyr/random/rand32.h>
@@ -95,6 +96,7 @@ static void tsch_operate_link(struct net_if *iface, struct ieee802154_tsch_link 
 	struct ieee802154_tsch_link *link = active_link;
 	uint16_t channel;
 
+	ieee802154_trace_enter(NULL, IEEE802154_TRACING_TSCH_SLOT_START);
 	LOG_DBG("timeslot started");
 
 	/* Channel Hopping */
@@ -189,6 +191,8 @@ static void tsch_operate_link(struct net_if *iface, struct ieee802154_tsch_link 
 	}
 
 out:
+
+	ieee802154_trace_exit(IEEE802154_TRACING_TSCH_SLOT_END);
 	LOG_DBG("timeslot ended");
 }
 
@@ -370,6 +374,10 @@ void ieee802154_tsch_op_init(struct net_if *iface)
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	enum ieee802154_phy_channel_page channel_page;
 	bool is_subghz;
+
+	if (IS_ENABLED(CONFIG_SEGGER_SYSTEMVIEW)) {
+		ieee802154_tracing_init();
+	}
 
 	k_thread_create(&tsch_thread, tsch_thread_stack, K_KERNEL_STACK_SIZEOF(tsch_thread_stack),
 			tsch_state_machine, iface, NULL, NULL, TSCH_METAIRQ_PRIO, 0, K_FOREVER);
