@@ -704,7 +704,9 @@ static int ieee802154_set_parameters(uint32_t mgmt_request,
 		goto out;
 	}
 
-	if (mgmt_request == NET_REQUEST_IEEE802154_SET_CHANNEL) {
+	if (mgmt_request == NET_REQUEST_IEEE802154_SET_DEVICE_ROLE) {
+		ctx->device_role = value;
+	} else if (mgmt_request == NET_REQUEST_IEEE802154_SET_CHANNEL) {
 		if (ctx->channel != value) {
 			if (!ieee802154_radio_verify_channel(iface, value)) {
 				ret = -EINVAL;
@@ -777,6 +779,9 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_EXT_ADDR,
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_SHORT_ADDR,
 				  ieee802154_set_parameters);
 
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_DEVICE_ROLE,
+				  ieee802154_set_parameters);
+
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_TX_POWER,
 				  ieee802154_set_parameters);
 
@@ -814,6 +819,8 @@ static int ieee802154_get_parameters(uint32_t mgmt_request,
 		sys_memcpy_swap(data, ctx->ext_addr, IEEE802154_EXT_ADDR_LENGTH);
 	} else if (mgmt_request == NET_REQUEST_IEEE802154_GET_SHORT_ADDR) {
 		*value = ctx->short_addr;
+	} else if (mgmt_request == NET_REQUEST_IEEE802154_GET_DEVICE_ROLE) {
+		*value = ctx->device_role;
 	} else if (mgmt_request == NET_REQUEST_IEEE802154_GET_TX_POWER) {
 		int16_t *s_value = (int16_t *)data;
 
@@ -834,6 +841,9 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_EXT_ADDR,
 				  ieee802154_get_parameters);
 
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_SHORT_ADDR,
+				  ieee802154_get_parameters);
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_DEVICE_ROLE,
 				  ieee802154_get_parameters);
 
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_TX_POWER,
