@@ -152,16 +152,23 @@ static void test_scan_shell_cmd(void)
 	/* The beacon placed into the RX queue will be received and handled as
 	 * soon as this command yields waiting for beacons.
 	 */
-	ret = shell_execute_cmd(NULL, "ieee802154 scan active 11 500");
-	zassert_equal(0, ret, "Active scan failed: %d", ret);
+	if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)) {
+		ret = shell_execute_cmd(NULL, "ieee802154 scan passive 11 500");
+	} else {
+		ret = shell_execute_cmd(NULL, "ieee802154 scan active 11 500");
+	}
+	zassert_equal(0, ret, "Scan failed: %d", ret);
 
-	zassert_equal(0, k_sem_take(&scan_lock, K_NO_WAIT), "Active scan: did not receive beacon.");
+	zassert_equal(0, k_sem_take(&scan_lock, K_NO_WAIT), "Scan: did not receive beacon.");
 
-	parse_frame(&mpdu);
-	test_beacon_request(&mpdu);
-
-	net_pkt_frag_unref(current_pkt->frags);
-	current_pkt->frags = NULL;
+	if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)) {
+		zassert_is_null(current_pkt->frags);
+	} else {
+		parse_frame(&mpdu);
+		test_beacon_request(&mpdu);
+		net_pkt_frag_unref(current_pkt->frags);
+		current_pkt->frags = NULL;
+	}
 }
 
 static void test_associate_shell_cmd(struct ieee802154_context *ctx)
@@ -205,7 +212,7 @@ static void test_associate_shell_cmd(struct ieee802154_context *ctx)
 	current_pkt->frags = NULL;
 }
 
-ZTEST(ieee802154_l2_shell, test_active_scan)
+ZTEST(ieee802154_l2_shell, test_scan)
 {
 	uint8_t beacon_pkt[] = {
 		0x00, 0xd0, /* FCF */

@@ -126,6 +126,13 @@ static int ieee802154_scan(uint32_t mgmt_request, struct net_if *iface,
 	if (mgmt_request == NET_REQUEST_IEEE802154_ACTIVE_SCAN) {
 		struct ieee802154_frame_params params = {0};
 
+		if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)) {
+			k_sem_give(&ctx->scan_ctx_lock);
+			NET_DBG("Active scan is not supported in TSCH PANs.");
+			ret = -ENOTSUP;
+			goto out;
+		}
+
 		pkt = ieee802154_create_mac_cmd_frame(
 			iface, IEEE802154_CFI_BEACON_REQUEST, &params, NULL);
 		if (!pkt) {
