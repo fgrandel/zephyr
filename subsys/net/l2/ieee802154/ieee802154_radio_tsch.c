@@ -19,6 +19,7 @@ static inline int tsch_channel_access(struct net_if *iface)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
 
+	/* No need to lock the context as tsch_cca is immutable while TSCH mode is on. */
 	if (ctx->tsch_cca) {
 		int ret = ieee802154_radio_cca(iface);
 

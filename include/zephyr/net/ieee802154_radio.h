@@ -468,20 +468,23 @@ enum ieee802154_hw_caps {
 	/** Promiscuous mode supported */
 	IEEE802154_HW_PROMISC = BIT(3),
 
+	/** CCA procedure supported on TX */
+	IEEE802154_HW_CCA = BIT(4),
+
 	/** CSMA-CA procedure supported on TX */
-	IEEE802154_HW_CSMA = BIT(4),
+	IEEE802154_HW_CSMA = BIT(5),
 
 	/** Waits for ACK on TX if AR bit is set in TX pkt */
-	IEEE802154_HW_TX_RX_ACK = BIT(5),
+	IEEE802154_HW_TX_RX_ACK = BIT(6),
 
 	/** Supports retransmission on TX ACK timeout */
-	IEEE802154_HW_RETRANSMISSION = BIT(6),
+	IEEE802154_HW_RETRANSMISSION = BIT(7),
 
 	/** Sends ACK on RX if AR bit is set in RX pkt */
-	IEEE802154_HW_RX_TX_ACK = BIT(7),
+	IEEE802154_HW_RX_TX_ACK = BIT(8),
 
 	/** TX at specified time supported */
-	IEEE802154_HW_TXTIME = BIT(8),
+	IEEE802154_HW_TXTIME = BIT(9),
 
 	/** TX directly from sleep supported
 	 *
@@ -507,13 +510,13 @@ enum ieee802154_hw_caps {
 	 * @deprecated Drivers and L2 SHALL replace all references to this
 	 * capability with references to @ref IEEE802154_HW_RXTIME.
 	 */
-	IEEE802154_HW_SLEEP_TO_TX = BIT(9),
+	IEEE802154_HW_SLEEP_TO_TX = BIT(10),
 
 	/** Timed RX window scheduling supported */
-	IEEE802154_HW_RXTIME = BIT(10),
+	IEEE802154_HW_RXTIME = BIT(11),
 
 	/** TX security supported (key management, encryption and authentication) */
-	IEEE802154_HW_TX_SEC = BIT(11),
+	IEEE802154_HW_TX_SEC = BIT(12),
 
 	/* Note: Update also IEEE802154_HW_CAPS_BITS_COMMON_COUNT when changing
 	 * the ieee802154_hw_caps type.
@@ -521,7 +524,7 @@ enum ieee802154_hw_caps {
 };
 
 /** @brief Number of bits used by ieee802154_hw_caps type. */
-#define IEEE802154_HW_CAPS_BITS_COMMON_COUNT (12)
+#define IEEE802154_HW_CAPS_BITS_COMMON_COUNT (13)
 
 /** @brief This and higher values are specific to the protocol- or driver-specific extensions. */
 #define IEEE802154_HW_CAPS_BITS_PRIV_START IEEE802154_HW_CAPS_BITS_COMMON_COUNT

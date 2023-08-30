@@ -171,6 +171,7 @@ config NET_L2_IEEE802154_TSCH
 	select EXPERIMENTAL
 	select NET_L2_IEEE802154_IE_SUPPORT
 	select NET_L2_IEEE802154_CHANNEL_HOPPING_SUPPORT
+	select NET_PKT_TXTIME
 	help
 	  Start the 802.15.4 L2 driver in TSCH (time slotted channel hopping)
 	  mode (MAC PIB attribute: macTschEnabled). This is EXPERIMENTAL work

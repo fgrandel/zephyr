@@ -58,6 +58,9 @@ config NET_L2_IEEE802154_RADIO_TSCH_CCA
 	  is closely aligned making intra-network collision avoidance using CCA
 	  ineffective. TSCH devices also use channel hopping, so there is no backoff
 	  period used when CCA prevents a transmission.
+	  This is just a default for all interfaces and can be changed at
+	  runtime via a net management call when setting TSCH mode to "on", see
+	  NET_REQUEST_IEEE802154_SET_TSCH_MODE.
 endif # NET_L2_IEEE802154_TSCH
 
 config NET_L2_IEEE802154_RADIO_CSMA_CA_MAX_BO

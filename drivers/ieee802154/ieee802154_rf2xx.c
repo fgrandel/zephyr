@@ -369,6 +369,7 @@ static enum ieee802154_hw_caps rf2xx_get_capabilities(const struct device *dev)
 	return IEEE802154_HW_FCS |
 	       IEEE802154_HW_PROMISC |
 	       IEEE802154_HW_FILTER |
+	       IEEE802154_HW_CCA |
 	       IEEE802154_HW_CSMA |
 	       IEEE802154_HW_RETRANSMISSION |
 	       IEEE802154_HW_TX_RX_ACK |

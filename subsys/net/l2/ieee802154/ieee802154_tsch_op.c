@@ -19,6 +19,9 @@ LOG_MODULE_REGISTER(net_ieee802154_tsch, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #include "ieee802154_tsch_op.h"
 #include "ieee802154_utils.h"
 
+BUILD_ASSERT(IS_ENABLED(CONFIG_NET_PKT_TXTIME),
+	     "TSCH requires TX timestamps, please enable CONFIG_NET_PKT_TXTIME.");
+
 /* We only define a single thread and slot timing context for now as we assume
  * that even if multiple L2 interfaces are configured they will participate in a
  * single schedule to avoid collisions and timing delays.
@@ -155,4 +158,7 @@ void ieee802154_tsch_op_init(struct net_if *iface)
 		.length = is_subghz ? 120000U : 10000U,
 		.ack_wait = 400U,
 	};
+
+	/* This is just a default, can be changed via NET_REQUEST_IEEE802154_SET_TSCH_MODE. */
+	ctx->tsch_cca = IS_ENABLED(CONFIG_NET_L2_IEEE802154_RADIO_TSCH_CCA);
 }

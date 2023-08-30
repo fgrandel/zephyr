@@ -206,34 +206,59 @@ inline int ieee802154_wait_for_ack(struct net_if *iface, bool ack_required)
 
 int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_buf *frag)
 {
+	/* In the TSCH case retransmission needs to be handled by the TSCH state
+	 * machine rather than here.
+	 */
 	uint8_t remaining_attempts = IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)
 					     ? 1U
 					     : CONFIG_NET_L2_IEEE802154_RADIO_TX_RETRIES + 1;
-	bool hw_csma, ack_required;
+	enum ieee802154_hw_caps hw_caps = ieee802154_radio_get_hw_capabilities(iface);
+	bool hw_csma, hw_cca = false, ack_required;
+	enum ieee802154_tx_mode tx_mode;
 	int ret;
 
 	NET_DBG("frag %p", frag);
 
-	if (ieee802154_radio_get_hw_capabilities(iface) & IEEE802154_HW_RETRANSMISSION) {
+	if (!IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH) &&
+	    (hw_caps & IEEE802154_HW_RETRANSMISSION)) {
 		/* A driver that claims retransmission capability must also be able
 		 * to wait for ACK frames otherwise it could not decide whether or
 		 * not retransmission is required in a standard conforming way.
 		 */
-		__ASSERT_NO_MSG(ieee802154_radio_get_hw_capabilities(iface) &
-				IEEE802154_HW_TX_RX_ACK);
+		__ASSERT_NO_MSG(hw_caps & IEEE802154_HW_TX_RX_ACK);
 		remaining_attempts = 1;
 	}
 
 	hw_csma = IS_ENABLED(CONFIG_NET_L2_IEEE802154_RADIO_CSMA_CA) &&
-		  ieee802154_radio_get_hw_capabilities(iface) & IEEE802154_HW_CSMA;
+		  (hw_caps & IEEE802154_HW_CSMA);
+
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+	hw_cca = hw_caps & IEEE802154_HW_CCA &&
+		 /* No need to lock the context as tsch_cca is immutable while TSCH mode is on. */
+		 ((struct ieee802154_context *)net_if_l2_data(iface))->tsch_cca;
+#endif
+
+	if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)) {
+		/* TODO: Implement an approximate alternative for drivers that do
+		 * not support TX time.
+		 */
+		__ASSERT_NO_MSG(IS_ENABLED(CONFIG_NET_PKT_TXTIME) &&
+				(hw_caps & IEEE802154_HW_TXTIME));
+
+		tx_mode = hw_cca ? IEEE802154_TX_MODE_TXTIME_CCA : IEEE802154_TX_MODE_TXTIME;
+	} else {
+		tx_mode = hw_csma ? IEEE802154_TX_MODE_CSMA_CA : IEEE802154_TX_MODE_DIRECT;
+	}
 
 	/* Media access (CSMA, ALOHA, ...) and retransmission, see section 6.7.4.4. */
 	while (remaining_attempts) {
-		if (!hw_csma) {
+		if (!hw_csma && !hw_cca) {
 			ret = ieee802154_wait_for_clear_channel(iface);
 			if (ret != 0) {
-				/* TODO: reschedule TSCH transmission if ret == -EBUSY. */
-
+				/* In case of CCA failure we do not try to
+				 * re-transmit. Retransmission is only relevant
+				 * when no ACK is received.
+				 */
 				NET_WARN("Clear channel assessment failed: dropping fragment %p on "
 					 "interface %p.",
 					 frag, iface);
@@ -245,14 +270,15 @@ int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_
 		ack_required = ieee802154_prepare_for_ack(iface, frag);
 
 		/* TX including:
-		 *  - CSMA/CA in case the driver has IEEE802154_HW_CSMA capability,
+		 *  - CCA in case the driver has IEEE802154_HW_CCA capability and CCA was requested,
+		 *  - CSMA/CA in case the driver has IEEE802154_HW_CSMA capability and CSMA/CA was
+		 *    requested,
+		 *  - timed TX in case it was requested,
 		 *  - waiting for ACK in case the driver has IEEE802154_HW_TX_RX_ACK capability,
 		 *  - retransmission on ACK timeout in case the driver has
 		 *    IEEE802154_HW_RETRANSMISSION capability.
 		 */
-		ret = ieee802154_radio_tx(
-			iface, hw_csma ? IEEE802154_TX_MODE_CSMA_CA : IEEE802154_TX_MODE_DIRECT,
-			pkt, frag);
+		ret = ieee802154_radio_tx(iface, tx_mode, pkt, frag);
 		if (ret) {
 			/* Transmission failure. */
 			return ret;
@@ -266,6 +292,8 @@ int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_
 			 */
 			return 0;
 		}
+
+		/* TODO: TSCH ACK timing via receive window. */
 
 		/* No-op in case the driver has IEEE802154_HW_TX_RX_ACK capability. */
 		ret = ieee802154_wait_for_ack(iface, ack_required);
