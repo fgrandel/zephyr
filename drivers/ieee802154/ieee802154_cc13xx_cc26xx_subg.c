@@ -35,6 +35,13 @@ LOG_MODULE_REGISTER(ieee802154_cc13xx_cc26xx_subg);
 #include "ieee802154_cc13xx_cc26xx_net_time.h"
 #include "ieee802154_cc13xx_cc26xx_subg.h"
 
+/* Measured offsets for timed RX/TX, i.e. the latency introduced by driver
+ * firmware as compared to the programmed value.
+ */
+#define RX_START_TIME_OFFSET_NS -41750LL
+#define RX_END_TIME_OFFSET_NS   -14500LL
+#define TX_START_TIME_OFFSET_NS -101250LL
+
 static int drv_start_rx(const struct device *dev);
 static int drv_stop_rx(const struct device *dev);
 
@@ -333,32 +340,46 @@ static void drv_rx_done(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 
 	for (int i = 0; i < CC13XX_CC26XX_NUM_RX_BUF; i++) {
 		if (drv_data->rx_entry[i].status == DATA_ENTRY_FINISHED) {
-			len = drv_data->rx_data[i][0];
-			sdu = drv_data->rx_data[i] + 1;
-			status = drv_data->rx_data[i][len--];
-			rssi = drv_data->rx_data[i][len--];
+			uint8_t *cursor = drv_data->rx_data[i];
+			uint8_t buf_len, payload_len;
+			ratmr_t rx_timestamp_rat = 0;
+			int8_t rssi, status;
+			struct net_pkt *pkt;
+			uint8_t *payload;
 
-			/* TODO: Configure firmware to include CRC in raw mode. */
-			if (IS_ENABLED(CONFIG_IEEE802154_RAW_MODE) && len > 0) {
-				/* append CRC-16/CCITT */
-				uint16_t crc = 0;
+			buf_len = *cursor;
+			__ASSERT_NO_MSG(buf_len >=
+					CC13XX_CC26XX_RX_BUF_LEN_SIZE +
+						CC13XX_CC26XX_RX_BUF_ADDITIONAL_DATA_SIZE);
+			cursor += CC13XX_CC26XX_RX_BUF_LEN_SIZE;
 
-				crc = crc16_ccitt(0, sdu, len);
-				sdu[len++] = crc;
-				sdu[len++] = crc >> 8;
+			payload = cursor;
+			payload_len = buf_len - CC13XX_CC26XX_RX_BUF_LEN_SIZE -
+				      CC13XX_CC26XX_RX_BUF_ADDITIONAL_DATA_SIZE +
+				      CC13XX_CC26XX_RX_BUF_CRC_SIZE;
+			cursor += payload_len;
+
+			rssi = *cursor;
+			cursor += CC13XX_CC26XX_RX_BUF_RSSI_SIZE;
+
+			if (CC13XX_CC26XX_RX_BUF_TIMESTAMP_SIZE > 0) {
+				rx_timestamp_rat = sys_get_le32(cursor);
+				cursor += CC13XX_CC26XX_RX_BUF_TIMESTAMP_SIZE;
 			}
 
-			LOG_DBG("Received: len = %u, rssi = %d status = %u",
-				len, rssi, status);
+			status = *cursor;
 
-			pkt = net_pkt_rx_alloc_with_buffer(
-				drv_data->iface, len, AF_UNSPEC, 0, K_NO_WAIT);
+			LOG_DBG("Received: len = %u, rssi = %d status = %u",
+				payload_len - CC13XX_CC26XX_RX_BUF_CRC_SIZE, rssi, status);
+
+			pkt = net_pkt_rx_alloc_with_buffer(drv_data->iface, payload_len, AF_UNSPEC,
+							   0, K_NO_WAIT);
 			if (!pkt) {
 				LOG_WRN("Cannot allocate packet");
 				continue;
 			}
 
-			if (net_pkt_write(pkt, sdu, len)) {
+			if (net_pkt_write(pkt, payload, payload_len)) {
 				LOG_WRN("Cannot write packet");
 				net_pkt_unref(pkt);
 				continue;
@@ -368,10 +389,22 @@ static void drv_rx_done(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 
 			/* TODO: Determine LQI in PROP mode. */
 			net_pkt_set_ieee802154_lqi(pkt, 0xff);
-			net_pkt_set_ieee802154_rssi_dbm(pkt,
-							rssi == CC13XX_CC26XX_INVALID_RSSI
-								? IEEE802154_MAC_RSSI_DBM_UNDEFINED
-								: rssi);
+			if (rssi == CC13XX_CC26XX_INVALID_RSSI) {
+				net_pkt_set_ieee802154_rssi_dbm(pkt,
+								IEEE802154_MAC_RSSI_DBM_UNDEFINED);
+			} else {
+				net_pkt_set_ieee802154_rssi_dbm(pkt, rssi);
+			}
+
+			if (rx_timestamp_rat > 0) {
+				const struct net_time_reference_api *time_api =
+					ieee802154_cc13xx_cc26xx_net_time_reference_api_get();
+				net_time_t rx_timestamp_ns;
+
+				net_time_reference_get_time_from_tick(
+					time_api, (void *)&rx_timestamp_rat, &rx_timestamp_ns);
+				net_pkt_set_timestamp_ns(pkt, rx_timestamp_ns);
+			}
 
 			if (ieee802154_handle_ack(drv_data->iface, pkt) == NET_OK) {
 				net_pkt_unref(pkt);
@@ -438,7 +471,7 @@ static enum ieee802154_hw_caps
 ieee802154_cc13xx_cc26xx_subg_get_capabilities(const struct device *dev)
 {
 	/* TODO: enable IEEE802154_HW_FILTER */
-	return IEEE802154_HW_FCS;
+	return IEEE802154_HW_FCS | IEEE802154_HW_TXTIME;
 }
 
 static int ieee802154_cc13xx_cc26xx_subg_cca(const struct device *dev)
@@ -507,34 +540,115 @@ out:
 	return ret;
 }
 
-/* This method must be called with the lock held. */
-static int drv_start_rx(const struct device *dev)
+static inline void drv_assert_ready_for_rx(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 {
-	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = dev->data;
-	RF_CmdHandle cmd_handle;
-
-	if (drv_data->cmd_prop_rx_adv.status == ACTIVE) {
-		return -EALREADY;
-	}
-
 	if (IS_ENABLED(CONFIG_ASSERT) && CONFIG_ASSERT_LEVEL > 0) {
+		__ASSERT_NO_MSG(drv_data->is_up);
+
 		/* ensure that all RX buffers are initialized and pending. */
 		for (int i = 0; i < CC13XX_CC26XX_NUM_RX_BUF; i++) {
 			__ASSERT_NO_MSG(drv_data->rx_entry[i].pNextEntry != NULL);
 			__ASSERT_NO_MSG(drv_data->rx_entry[i].status == DATA_ENTRY_PENDING);
 		}
 	}
+}
+
+/* This method must be called with the lock held. */
+static int drv_start_rx(const struct device *dev)
+{
+	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = dev->data;
+	RF_CmdHandle rx_cmd_handle;
+
+	drv_assert_ready_for_rx(drv_data);
+
+	if (drv_data->cmd_prop_rx_adv.status == ACTIVE) {
+		return -EALREADY;
+	}
 
 	drv_data->cmd_prop_rx_adv.status = IDLE;
-	cmd_handle = RF_postCmd(drv_data->rf_handle,
-				(RF_Op *)&drv_data->cmd_prop_rx_adv, RF_PriorityNormal,
-				cmd_prop_rx_adv_callback, RF_EventRxEntryDone);
-	if (cmd_handle < 0) {
-		LOG_DBG("Failed to post RX command (%d)", cmd_handle);
+
+	drv_data->cmd_prop_rx_adv.startTrigger.triggerType = TRIG_NOW;
+	drv_data->cmd_prop_rx_adv.startTime = 0U;
+
+	drv_data->cmd_prop_rx_adv.endTrigger.triggerType = TRIG_NEVER;
+	drv_data->cmd_prop_rx_adv.endTime = 0U;
+
+	rx_cmd_handle =
+		RF_postCmd(drv_data->rf_handle, (RF_Op *)&drv_data->cmd_prop_rx_adv,
+			   RF_PriorityNormal, cmd_prop_rx_adv_callback, RF_EventRxEntryDone);
+	if (rx_cmd_handle < 0) {
+		LOG_DBG("Failed to post RX command (%d)", rx_cmd_handle);
 		return -EIO;
 	}
 
-	drv_data->rx_cmd_handle = cmd_handle;
+	drv_data->rx_cmd_handle = rx_cmd_handle;
+
+	return 0;
+}
+
+/* This method must be called with the lock held. */
+static int drv_program_rx_slot(const struct device *dev)
+{
+	const struct net_time_reference_api *time_api =
+		ieee802154_cc13xx_cc26xx_net_time_reference_api_get();
+	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = dev->data;
+	RF_Op *startOp = (RF_Op *)&drv_data->cmd_prop_rx_adv;
+	RF_CmdHandle rx_cmd_handle;
+	uint16_t freq, fract;
+	int ret;
+
+	drv_assert_ready_for_rx(drv_data);
+
+	/* Configuring an RX slot disables continuous RX. */
+	if (drv_data->cmd_prop_rx_adv.status == ACTIVE) {
+		if (drv_stop_rx(dev)) {
+			return -EIO;
+		}
+	}
+
+	/* Program the channel. */
+	ret = drv_channel_frequency(drv_data->rx_slot.channel, &freq, &fract);
+	if (ret) {
+		return ret;
+	}
+
+	if (drv_data->cmd_fs.frequency != freq || drv_data->cmd_fs.fractFreq != fract) {
+		drv_data->cmd_fs.status = IDLE;
+		drv_data->cmd_fs.frequency = freq;
+		drv_data->cmd_fs.fractFreq = fract;
+
+		drv_data->cmd_fs.pNextOp = (rfc_radioOp_t *)&drv_data->cmd_prop_rx_adv;
+		startOp = (RF_Op *)&drv_data->cmd_fs;
+	}
+
+	/* Program the RX operation. */
+	drv_data->cmd_prop_rx_adv.startTrigger.triggerType = TRIG_ABSTIME;
+	if (net_time_reference_get_tick_from_time(time_api,
+						  drv_data->rx_slot.start + RX_START_TIME_OFFSET_NS,
+						  NET_TIME_ROUNDING_PREVIOUS_TIMEPOINT,
+						  (void *)&drv_data->cmd_prop_rx_adv.startTime)) {
+		return -EIO;
+	}
+
+	drv_data->cmd_prop_rx_adv.endTrigger.triggerType = TRIG_ABSTIME;
+	if (net_time_reference_get_tick_from_time(
+		    time_api,
+		    drv_data->rx_slot.start + drv_data->rx_slot.duration + RX_END_TIME_OFFSET_NS,
+		    NET_TIME_ROUNDING_NEXT_TIMEPOINT, (void *)&drv_data->cmd_prop_rx_adv.endTime)) {
+		return -EIO;
+	}
+
+	drv_data->cmd_prop_rx_adv.status = IDLE;
+
+	/* Schedule the RX command chain. */
+	rx_cmd_handle = RF_postCmd(drv_data->rf_handle, startOp, RF_PriorityNormal,
+				   cmd_prop_rx_adv_callback, RF_EventRxEntryDone);
+	if (rx_cmd_handle < 0) {
+		LOG_DBG("Failed to schedule RX slot (%d)", rx_cmd_handle);
+		return -EIO;
+	}
+
+	drv_data->rx_cmd_handle = rx_cmd_handle;
 
 	return 0;
 }
@@ -545,7 +659,8 @@ static int drv_stop_rx(const struct device *dev)
 	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = dev->data;
 	RF_Stat status;
 
-	if (drv_data->cmd_prop_rx_adv.status != ACTIVE) {
+	if (drv_data->cmd_prop_rx_adv.status != ACTIVE &&
+	    drv_data->cmd_prop_rx_adv.status != PENDING) {
 		return -EALREADY;
 	}
 
@@ -578,6 +693,11 @@ static int ieee802154_cc13xx_cc26xx_subg_set_channel(
 		return -EWOULDBLOCK;
 	}
 
+	if (drv_data->cmd_fs.frequency == freq && drv_data->cmd_fs.fractFreq == fract) {
+		ret = -EALREADY;
+		goto release;
+	}
+
 	was_rx_on = drv_data->cmd_prop_rx_adv.status == ACTIVE;
 	if (was_rx_on) {
 		ret = drv_stop_rx(dev);
@@ -591,6 +711,7 @@ static int ieee802154_cc13xx_cc26xx_subg_set_channel(
 	drv_data->cmd_fs.status = IDLE;
 	drv_data->cmd_fs.frequency = freq;
 	drv_data->cmd_fs.fractFreq = fract;
+	drv_data->cmd_fs.pNextOp = NULL;
 	events = RF_runCmd(drv_data->rf_handle, (RF_Op *)&drv_data->cmd_fs,
 			   RF_PriorityNormal, NULL, 0);
 	if (events != RF_EventLastCmdDone || drv_data->cmd_fs.status != DONE_OK) {
@@ -606,6 +727,7 @@ out:
 		ret = drv_power_down();
 	}
 
+release:
 	k_sem_give(&drv_data->lock);
 
 	return ret;
@@ -669,27 +791,44 @@ static int ieee802154_cc13xx_cc26xx_subg_tx(const struct device *dev,
 	RF_EventMask events;
 	int ret = 0;
 
-	if (mode != IEEE802154_TX_MODE_DIRECT) {
-		/* For backwards compatibility we only log an error but do not bail. */
-		NET_ERR("TX mode %d not supported - sending directly instead.", mode);
-	}
-
 	if (k_sem_take(&drv_data->lock, K_FOREVER)) {
 		return -EIO;
 	}
 
 	if (!drv_data->is_up) {
 		ret = -ENETDOWN;
-		goto out;
+		goto release;
 	}
 
-	was_rx_on = drv_data->cmd_prop_rx_adv.status == ACTIVE;
-	if (was_rx_on) {
-		ret = drv_stop_rx(dev);
-		if (ret) {
-			ret = -EIO;
-			goto out;
+	switch (mode) {
+	case IEEE802154_TX_MODE_DIRECT:
+		drv_data->cmd_prop_tx_adv.startTrigger.triggerType = TRIG_NOW;
+		drv_data->cmd_prop_tx_adv.startTime = 0U;
+		break;
+
+	case IEEE802154_TX_MODE_TXTIME: {
+		const struct net_time_reference_api *time_api =
+			ieee802154_cc13xx_cc26xx_net_time_reference_api_get();
+
+		/* Convert the network-wide distributed syntonized time
+		 * representation to a TI driver specific RAT value.
+		 */
+		drv_data->cmd_prop_tx_adv.startTrigger.triggerType = TRIG_ABSTIME;
+		if (net_time_reference_get_tick_from_time(
+			    time_api, net_pkt_timestamp_ns(pkt) + TX_START_TIME_OFFSET_NS,
+			    NET_TIME_ROUNDING_NEAREST_TIMEPOINT,
+			    (void *)&drv_data->cmd_prop_tx_adv.startTime)) {
+			return -EIO;
+			goto release;
 		}
+
+		break;
+	}
+
+	default:
+		/* For backwards compatibility we only log an error but do not bail. */
+		NET_ERR("TX mode %d not supported - sending directly instead.", mode);
+		drv_data->cmd_prop_tx_adv.startTrigger.triggerType = TRIG_NOW;
 	}
 
 	/* Complete the SUN FSK PHY header, see IEEE 802.15.4, section 19.2.4. */
@@ -700,6 +839,15 @@ static int ieee802154_cc13xx_cc26xx_subg_tx(const struct device *dev,
 	/* TODO: Zero-copy TX, see discussion in #49775. */
 	memcpy(&drv_data->tx_data[IEEE802154_PHY_SUN_FSK_PHR_LEN], buf->data, buf->len);
 	drv_data->cmd_prop_tx_adv.pktLen = buf->len + IEEE802154_PHY_SUN_FSK_PHR_LEN;
+
+	was_rx_on = drv_data->cmd_prop_rx_adv.status == ACTIVE;
+	if (was_rx_on) {
+		ret = drv_stop_rx(dev);
+		if (ret) {
+			ret = -EIO;
+			goto out;
+		}
+	}
 
 	drv_data->cmd_prop_tx_adv.status = IDLE;
 	events = RF_runCmd(drv_data->rf_handle, (RF_Op *)&drv_data->cmd_prop_tx_adv,
@@ -720,12 +868,68 @@ out:
 		(void)drv_start_rx(dev);
 	}
 
+ release:
 	k_sem_give(&drv_data->lock);
 	return ret;
 }
 
 /* driver-allocated attribute memory - constant across all driver instances */
 IEEE802154_DEFINE_PHY_SUPPORTED_CHANNELS(drv_attr, 0, 10);
+
+static int
+ieee802154_cc13xx_cc26xx_subg_configure(const struct device *dev,
+					enum ieee802154_config_type type,
+					const struct ieee802154_config *config)
+{
+	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = dev->data;
+	int ret = 0;
+
+	switch (type) {
+	case IEEE802154_CONFIG_RX_SLOT:
+		if (config->rx_slot.start < -1 || config->rx_slot.duration < 0) {
+			return -EINVAL;
+		}
+
+		if (config->rx_slot.channel < drv_attr.phy_channel_range.from_channel ||
+		    config->rx_slot.channel > drv_attr.phy_channel_range.to_channel) {
+			return -EINVAL;
+		}
+
+		if (k_sem_take(&drv_data->lock, K_FOREVER)) {
+			return -EWOULDBLOCK;
+		}
+
+		drv_data->rx_slot.start = config->rx_slot.start;
+		drv_data->rx_slot.duration = config->rx_slot.duration;
+		drv_data->rx_slot.channel = config->rx_slot.channel;
+
+		if (drv_data->is_up) {
+			if (config->rx_slot.start == -1) {
+				ret = drv_start_rx(dev);
+				if (ret && ret != -EALREADY) {
+					ret = -EIO;
+				}
+
+				goto release;
+			}
+
+			if (drv_program_rx_slot(dev)) {
+				ret = -EIO;
+			}
+		}
+
+		break;
+
+	default:
+		ret = -ENOTSUP;
+		goto out;
+	}
+
+release:
+	k_sem_give(&drv_data->lock);
+out:
+	return ret;
+}
 
 static int ieee802154_cc13xx_cc26xx_subg_attr_get(const struct device *dev,
 						  enum ieee802154_attr attr,
@@ -760,7 +964,7 @@ ieee802154_cc13xx_cc26xx_subg_get_time_reference(const struct device *dev)
 static int ieee802154_cc13xx_cc26xx_subg_start(const struct device *dev)
 {
 	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = dev->data;
-	int ret;
+	int ret = 0;
 
 	if (k_sem_take(&drv_data->lock, LOCK_TIMEOUT)) {
 		return -EIO;
@@ -771,9 +975,14 @@ static int ieee802154_cc13xx_cc26xx_subg_start(const struct device *dev)
 		goto out;
 	}
 
-	ret = drv_start_rx(dev);
-	if (ret) {
-		goto out;
+	if (drv_data->rx_slot.start != IEEE802154_CONFIG_RX_SLOT_OFF) {
+		ret = drv_data->rx_slot.start == IEEE802154_CONFIG_RX_SLOT_NONE
+			      ? drv_start_rx(dev)
+			      : drv_program_rx_slot(dev);
+		if (ret) {
+			ret = -EIO;
+			goto out;
+		}
 	}
 
 	drv_data->is_up = true;
@@ -836,14 +1045,6 @@ static int ieee802154_cc13xx_cc26xx_subg_stop_if(const struct device *dev)
 	return ret;
 }
 
-static int
-ieee802154_cc13xx_cc26xx_subg_configure(const struct device *dev,
-					enum ieee802154_config_type type,
-					const struct ieee802154_config *config)
-{
-	return -ENOTSUP;
-}
-
 static void drv_setup_rx_buffers(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 {
 	/* No need to zero buffers as they are zeroed on initialization and no
@@ -860,7 +1061,7 @@ static void drv_setup_rx_buffers(struct ieee802154_cc13xx_cc26xx_subg_data *drv_
 		}
 
 		drv_data->rx_entry[i].config.type = DATA_ENTRY_TYPE_PTR;
-		drv_data->rx_entry[i].config.lenSz = 1;
+		drv_data->rx_entry[i].config.lenSz = CC13XX_CC26XX_RX_BUF_LEN_SIZE;
 		drv_data->rx_entry[i].length = sizeof(drv_data->rx_data[0]);
 		drv_data->rx_entry[i].pData = drv_data->rx_data[i];
 	}
@@ -898,6 +1099,8 @@ static void drv_data_init(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 
 	/* Setup circular RX queue (TRM 25.3.2.7) */
 	drv_setup_rx_buffers(drv_data);
+
+	drv_data->rx_slot.start = IEEE802154_CONFIG_RX_SLOT_NONE;
 
 	/* Setup circular TX buffer (TRM 25.10.2.1.1, table 25-171) */
 	drv_setup_tx_buffer(drv_data);
@@ -954,6 +1157,7 @@ static int ieee802154_cc13xx_cc26xx_subg_init(const struct device *dev)
 	RF_Params_init(&rf_params);
 	rf_params.pErrCb = client_error_callback;
 	rf_params.pClientEventCb = client_event_callback;
+	rf_params.nPowerUpDurationMargin = 1000;
 
 	drv_data->rf_handle = RF_open(&drv_data->rf_object,
 		&rf_mode, (RF_RadioSetup *)&ieee802154_cc13xx_subg_radio_div_setup,
@@ -970,6 +1174,7 @@ static int ieee802154_cc13xx_cc26xx_subg_init(const struct device *dev)
 	drv_data->cmd_fs.status = IDLE;
 	drv_data->cmd_fs.frequency = freq;
 	drv_data->cmd_fs.fractFreq = fract;
+	drv_data->cmd_fs.pNextOp = NULL;
 	events = RF_runCmd(drv_data->rf_handle, (RF_Op *)&drv_data->cmd_fs,
 			   RF_PriorityNormal, NULL, 0);
 	if (events != RF_EventLastCmdDone || drv_data->cmd_fs.status != DONE_OK) {
@@ -997,6 +1202,8 @@ static struct ieee802154_cc13xx_cc26xx_subg_data ieee802154_cc13xx_cc26xx_subg_d
 
 	.cmd_prop_rx_adv = {
 		.commandNo = CMD_PROP_RX_ADV,
+		.startTrigger.triggerType = TRIG_NOW,
+		.startTrigger.pastTrig = true,
 		.condition.rule = COND_NEVER,
 		.pktConf = {
 			.bRepeatOk = true,
@@ -1009,6 +1216,8 @@ static struct ieee802154_cc13xx_cc26xx_subg_data ieee802154_cc13xx_cc26xx_subg_d
 			.bAutoFlushCrcErr = true,
 			.bAppendRssi = true,
 			.bAppendStatus = true,
+			.bAppendTimestamp = IS_ENABLED(CONFIG_NET_PKT_TIMESTAMP),
+			.bIncludeCrc = IS_ENABLED(CONFIG_IEEE802154_RAW_MODE),
 		},
 		/* Last preamble byte and SFD for uncoded 2-FSK SUN PHY, phySunFskSfd = 0,
 		 * see IEEE 802.15.4, section 19.2.3.2, table 19-2.
@@ -1022,6 +1231,7 @@ static struct ieee802154_cc13xx_cc26xx_subg_data ieee802154_cc13xx_cc26xx_subg_d
 		},
 		.lenOffset = -4,
 		.endTrigger.triggerType = TRIG_NEVER,
+		.endTrigger.pastTrig = true,
 		.pQueue = &ieee802154_cc13xx_cc26xx_subg_data.rx_queue,
 		.pOutput =
 			(uint8_t *) &ieee802154_cc13xx_cc26xx_subg_data

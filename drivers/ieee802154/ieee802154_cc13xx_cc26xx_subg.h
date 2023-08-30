@@ -24,8 +24,29 @@
 #define CC13XX_CC26XX_NUM_RX_BUF \
 	CONFIG_IEEE802154_CC13XX_CC26XX_SUB_GHZ_NUM_RX_BUF
 
-/* Three additional bytes for length, RSSI and status values from CPE */
-#define CC13XX_CC26XX_RX_BUF_SIZE (IEEE802154_MAX_PHY_PACKET_SIZE + 3)
+/* TODO: Increase CC13XX_CC26XX_RX_BUF_LEN_SIZE to 2 bytes when implementing SUN
+ * PHYs with 2047 bytes payload, see section 11.3, table 11-1, aMaxPhyPacketSize.
+ */
+#define CC13XX_CC26XX_RX_BUF_LEN_SIZE 1
+
+/* TODO: Support 4-byte CRC when implementing SUN PHYs with 2047 bytes payload. */
+#define CC13XX_CC26XX_RX_BUF_CRC_SIZE                                                              \
+	(IS_ENABLED(CONFIG_IEEE802154_RAW_MODE) ? IEEE802154_FCS_LENGTH : 0)
+
+#define CC13XX_CC26XX_RX_BUF_RSSI_SIZE 1
+
+#define CC13XX_CC26XX_RX_BUF_TIMESTAMP_SIZE                                                        \
+	(IS_ENABLED(CONFIG_NET_PKT_TIMESTAMP) ? sizeof(ratmr_t) : 0)
+
+#define CC13XX_CC26XX_RX_BUF_STATUS_SIZE 1
+
+#define CC13XX_CC26XX_RX_BUF_ADDITIONAL_DATA_SIZE                                                  \
+	(CC13XX_CC26XX_RX_BUF_CRC_SIZE + CC13XX_CC26XX_RX_BUF_RSSI_SIZE +                          \
+	 CC13XX_CC26XX_RX_BUF_TIMESTAMP_SIZE + CC13XX_CC26XX_RX_BUF_STATUS_SIZE)
+
+#define CC13XX_CC26XX_RX_BUF_SIZE                                                                  \
+	(CC13XX_CC26XX_RX_BUF_LEN_SIZE + IEEE802154_MAX_PHY_PACKET_SIZE +                          \
+	 CC13XX_CC26XX_RX_BUF_ADDITIONAL_DATA_SIZE)
 
 #define CC13XX_CC26XX_TX_BUF_SIZE (IEEE802154_PHY_SUN_FSK_PHR_LEN + IEEE802154_MAX_PHY_PACKET_SIZE)
 
@@ -40,6 +61,12 @@ struct ieee802154_cc13xx_cc26xx_subg_data {
 
 	struct net_if *iface;
 	uint8_t mac[8]; /* in big endian */
+
+	struct {
+		uint16_t channel;
+		net_time_t start;
+		net_time_t duration;
+	} rx_slot;
 
 	bool is_up;
 
