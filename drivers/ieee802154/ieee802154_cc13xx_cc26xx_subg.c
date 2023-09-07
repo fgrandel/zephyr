@@ -470,7 +470,7 @@ static int ieee802154_cc13xx_cc26xx_subg_cca(const struct device *dev)
 
 	events = RF_runCmd(drv_data->rf_handle, (RF_Op *)&drv_data->cmd_prop_cs, RF_PriorityNormal,
 			   NULL, 0);
-	if (events != RF_EventLastCmdDone) {
+	if (events != RF_EventLastCmdDone || drv_data->cmd_prop_cs.status != PROP_DONE_OK) {
 		LOG_DBG("Failed to request CCA: 0x%" PRIx64, events);
 		ret = -EIO;
 		goto out;
@@ -593,7 +593,7 @@ static int ieee802154_cc13xx_cc26xx_subg_set_channel(
 	drv_data->cmd_fs.fractFreq = fract;
 	events = RF_runCmd(drv_data->rf_handle, (RF_Op *)&drv_data->cmd_fs,
 			   RF_PriorityNormal, NULL, 0);
-	if (events != RF_EventLastCmdDone) {
+	if (events != RF_EventLastCmdDone || drv_data->cmd_fs.status != DONE_OK) {
 		LOG_DBG("Failed to set frequency: 0x%" PRIx64, events);
 		ret = -EIO;
 	}
@@ -949,7 +949,7 @@ static int ieee802154_cc13xx_cc26xx_subg_init(const struct device *dev)
 	drv_data->cmd_fs.fractFreq = fract;
 	events = RF_runCmd(drv_data->rf_handle, (RF_Op *)&drv_data->cmd_fs,
 			   RF_PriorityNormal, NULL, 0);
-	if (events != RF_EventLastCmdDone) {
+	if (events != RF_EventLastCmdDone || drv_data->cmd_fs.status != DONE_OK) {
 		LOG_ERR("Failed to set frequency: 0x%" PRIx64, events);
 		return -EIO;
 	}
