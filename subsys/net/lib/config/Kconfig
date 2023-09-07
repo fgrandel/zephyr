@@ -126,11 +126,51 @@ endif # NET_IPV4
 
 if NET_L2_IEEE802154 || IEEE802154_RAW_MODE
 
+choice NET_CONFIG_IEEE802154_DEVICE_ROLE
+	prompt "IEEE 802.15.4 Device Role"
+	default NET_CONFIG_IEEE802154_DEVICE_ROLE_ENDDEVICE
+	help
+	  A device can act as an end device, coordinator or PAN coordinator.
+	  While these roles are not directly defined in the standard, they are
+	  required to define the exact behavior of the device.
+
+config NET_CONFIG_IEEE802154_DEVICE_ROLE_PAN_COORDINATOR
+	bool "Act as a PAN coordinator"
+	depends on NET_L2_IEEE802154_FFD
+	help
+	  A PAN coordinator starts the PAN. It is the device in a PAN that
+	  defines the PAN ID and may have a short address initially set rather
+	  than being associated by a coordinator. Only a single PAN coordinator
+	  per PAN is allowed.
+
+config NET_CONFIG_IEEE802154_DEVICE_ROLE_COORDINATOR
+	bool "Act as a coordinator"
+	depends on NET_L2_IEEE802154_FFD
+	help
+	  A coordinator is associated and receives its optional short address by
+	  the PAN coordinator or another coordinator. A coordinator may
+	  associate other coordinators or end devices and optionally distribute
+	  short addresses to them. Several coordinators are allowed in a single
+	  PAN.
+
+config NET_CONFIG_IEEE802154_DEVICE_ROLE_ENDDEVICE
+	bool "Act as an end device"
+	depends on NET_L2_IEEE802154_RFD
+	help
+	  An end device is associated and receives its optional short address by
+	  the PAN coordinator or a coordinator. An end device may not associate
+	  other devices or distribute short addresses to them. A large number of
+	  end devices can participate in a PAN.
+
+endchoice
+
 config NET_CONFIG_IEEE802154_PAN_ID
 	hex "IEEE 802.15.4 PAN ID"
+	default 0xffff if NET_L2_IEEE802154_TSCH && !NET_CONFIG_IEEE802154_DEVICE_ROLE_PAN_COORDINATOR
 	default 0xabcd
 	help
-	  The PAN ID to use by default in the sample.
+	  The PAN ID to use by default in the sample. In a TSCH network only the
+	  PAN coordinator may have a PAN ID initially set.
 
 config NET_CONFIG_IEEE802154_CHANNEL
 	int "IEEE 802.15.4 channel"

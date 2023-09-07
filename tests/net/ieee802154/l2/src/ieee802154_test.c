@@ -1278,7 +1278,7 @@ static bool initialize_test_environment(void)
 		return false;
 	}
 
-	dev = device_get_binding("fake_ieee802154");
+	dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_ieee802154));
 	if (!dev) {
 		NET_ERR("*** Could not get fake device\n");
 		goto release_pkt;

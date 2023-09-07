@@ -457,7 +457,7 @@ static void after(void *test_fixture)
 
 static void *test_setup(void)
 {
-	const struct device *dev = device_get_binding("fake_ieee802154");
+	const struct device *dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_ieee802154));
 
 	k_sem_reset(&driver_lock);
 

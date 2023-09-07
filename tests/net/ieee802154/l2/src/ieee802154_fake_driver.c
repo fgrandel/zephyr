@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define DT_DRV_COMPAT zephyr_ieee802154_fake
+
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_ieee802154_fake_driver, LOG_LEVEL_DBG);
 
@@ -114,6 +116,12 @@ static int fake_stop(const struct device *dev)
 	return 0;
 }
 
+static int fake_configure(const struct device *dev, enum ieee802154_config_type type,
+			  const struct ieee802154_config *config)
+{
+	return 0;
+}
+
 /* driver-allocated attribute memory - constant across all driver instances */
 IEEE802154_DEFINE_PHY_SUPPORTED_CHANNELS(drv_attr, 11, 26);
 
@@ -166,12 +174,11 @@ static struct ieee802154_radio_api fake_radio_api = {
 	.start			= fake_start,
 	.stop			= fake_stop,
 	.tx			= fake_tx,
+	.configure		= fake_configure,
 	.attr_get		= fake_attr_get,
 	.get_time		= fake_get_time,
 };
 
-NET_DEVICE_INIT(fake, "fake_ieee802154",
-		fake_init, NULL, NULL, NULL,
-		CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
-		&fake_radio_api, IEEE802154_L2,
-		NET_L2_GET_CTX_TYPE(IEEE802154_L2), IEEE802154_MTU);
+NET_DEVICE_DT_INST_DEFINE(0, fake_init, NULL, NULL, NULL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+			  &fake_radio_api, IEEE802154_L2, NET_L2_GET_CTX_TYPE(IEEE802154_L2),
+			  IEEE802154_MTU);

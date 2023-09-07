@@ -1,0 +1,10 @@
+/ {
+	chosen {
+		zephyr,ieee802154 = &ieee802154;
+	};
+
+	ieee802154: ieee802154 {
+		compatible = "zephyr,ieee802154-fake";
+		status = "okay";
+	};
+};
