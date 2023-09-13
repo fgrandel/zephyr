@@ -47,10 +47,15 @@ static inline void z_init_timeout(struct _timeout *to)
 	sys_dnode_init(&to->node);
 }
 
-void z_timeout_q_add_timeout(const struct k_timeout_api *api, struct _timeout *to,
-			     _timeout_func_t fn, k_timeout_t timeout);
+int z_timeout_q_add_timeout(const struct k_timeout_api *api, struct _timeout *to,
+			    _timeout_func_t fn, k_timeout_t timeout);
+
+int z_timeout_q_add_timeout_locked(const struct k_timeout_api *api, struct _timeout *to,
+				   _timeout_func_t fn, k_timeout_t timeout);
 
 int z_timeout_q_abort_timeout(const struct k_timeout_api *api, struct _timeout *to);
+
+int z_timeout_q_abort_timeout_locked(const struct k_timeout_api *api, struct _timeout *to);
 
 uint64_t z_timeout_q_tick_get(const struct k_timeout_api *api);
 
@@ -65,9 +70,16 @@ void z_add_timeout(struct _timeout *to, _timeout_func_t fn,
 
 int z_abort_timeout(struct _timeout *to);
 
+/* requires the timeout state to be locked */
+static inline bool z_is_active_timeout(const struct _timeout *to)
+{
+	return sys_dnode_is_linked(&to->node);
+}
+
+/* requires the timeout state to be locked */
 static inline bool z_is_inactive_timeout(const struct _timeout *to)
 {
-	return !sys_dnode_is_linked(&to->node);
+	return !z_is_active_timeout(to);
 }
 
 static inline void z_init_thread_timeout(struct _thread_base *thread_base)

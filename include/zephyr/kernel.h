@@ -1440,8 +1440,7 @@ const char *k_thread_state_str(k_tid_t thread_id, char *buf, size_t buf_size);
 struct k_timeout_state {
 	uint64_t curr_tick;
 	sys_dlist_t list;
-	struct k_spinlock timeout_lock;
-	struct k_spinlock timer_lock;
+	struct k_spinlock lock;
 	/* Ticks left to process in the currently-executing
 	 * z_timeout_q_timeout_announce()
 	 */
@@ -1463,31 +1462,54 @@ extern const struct k_timeout_api Z_SYS_CLOCK_TIMEOUT_API;
 #endif /* CONFIG_SYS_CLOCK_EXISTS */
 
 struct k_timer {
-	/*
-	 * _timeout structure must be first here if we want to use
+	/* _timeout structure must be first here if we want to use
 	 * dynamic timer allocation. timeout.node is used in the double-linked
 	 * list of free timers
+	 *
+	 * guarded by the timeout lock
 	 */
 	struct _timeout timeout;
 
-	/* wait queue for the (single) thread waiting on this timer */
+	/* wait queue for the (single) thread waiting on this timer,
+	 * guarded by the timeout lock
+	 */
 	_wait_q_t wait_q;
 
+	/* The timeout API that should be used to schedule this timer.
+	 * immutable after timer initialization
+	 */
 	const struct k_timeout_api *timeout_api;
 
-	/* runs in ISR context */
+	/* runs in ISR context,
+	 * immutable after timer initialization
+	 */
 	void (*expiry_fn)(struct k_timer *timer);
 
-	/* runs in the context of the thread that calls k_timer_stop() */
+	/* runs in the context of the thread that calls k_timer_stop(),
+	 * immutable after timer initialization
+	 */
 	void (*stop_fn)(struct k_timer *timer);
 
-	/* timer period */
+	/* timer period,
+	 * guarded by the timeout lock
+	 */
 	k_timeout_t period;
 
-	/* timer status */
+	/* timer status:
+	 *
+	 * UINT32_MAX: stopped or has never expired since last started
+	 *
+	 * 0 <= status < UINT32_MAX: is running and has expired at least once
+	 * since started, status represents the expiry times since the status
+	 * was last fetched in this case
+	 *
+	 * guarded by the timeout lock
+	 */
 	uint32_t status;
 
-	/* user-specific data, also used to support legacy features */
+	/* user-specific data, also used to support legacy features,
+	 * must be synchronized by the user
+	 */
 	void *user_data;
 
 	SYS_PORT_TRACING_TRACKING_FIELD(k_timer)
