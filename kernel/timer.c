@@ -13,6 +13,9 @@
 #include <ksched.h>
 #include <wait_q.h>
 
+#define TIMER_NOT_EXPIRED UINT32_MAX
+#define TIMER_STATUS_MAX (UINT32_MAX - 1U)
+
 /**
  * @brief Handle expiration of a kernel timer object.
  *
@@ -46,13 +49,28 @@ void z_timer_expiration_handler(struct _timeout *to)
 		return;
 	}
 
-	/* update timer's status */
-	timer->status++;
-
-	/* If the timer is periodic, start it again; don't add _TICK_ALIGN since
-	 * we're already aligned to a tick boundary
+	/* update timer's status:
+	 * TIMER_NOT_EXPIRED -> 1 (just started, see TIMER_NOT_EXPIRED = TIMER_STATUS_MAX + 1)
+	 * TIMER_STATUS_MAX -> 1 (status needs to wrap)
+	 * else -> increment by 1
 	 */
-	if (!K_TIMEOUT_EQ(timer->period, K_NO_WAIT) && !K_TIMEOUT_EQ(timer->period, K_FOREVER)) {
+	timer->status = (timer->status >= TIMER_STATUS_MAX) ? 1U : timer->status + 1U;
+
+	/* Invoke timer expiry function at the earliest possible time with
+	 * minimal jitter.
+	 */
+	if (timer->expiry_fn != NULL) {
+		k_spin_unlock(&timeout_state->lock, to_key);
+		timer->expiry_fn(timer);
+		to_key = k_spin_lock(&timeout_state->lock);
+	}
+
+	/* If the timer is periodic and has not been restarted or stopped in the
+	 * meantime, start it again; don't add _TICK_ALIGN since we're already
+	 * aligned to a tick boundary
+	 */
+	if (!K_TIMEOUT_EQ(timer->period, K_NO_WAIT) && !K_TIMEOUT_EQ(timer->period, K_FOREVER) &&
+	    timer->status != TIMER_NOT_EXPIRED) {
 		k_timeout_t next = timer->period;
 
 		/* see note about z_add_timeout() in z_impl_k_timer_start() */
@@ -74,13 +92,6 @@ void z_timer_expiration_handler(struct _timeout *to)
 #endif
 		z_timeout_q_add_timeout_locked(timeout_api, &timer->timeout,
 					       z_timer_expiration_handler, next);
-	}
-
-	/* Invoke timer expiry function. */
-	if (timer->expiry_fn != NULL) {
-		k_spin_unlock(&timeout_state->lock, to_key);
-		timer->expiry_fn(timer);
-		to_key = k_spin_lock(&timeout_state->lock);
 	}
 
 	if (!IS_ENABLED(CONFIG_MULTITHREADING)) {
@@ -110,7 +121,7 @@ void k_timer_init(struct k_timer *timer,
 {
 	timer->expiry_fn = expiry_fn;
 	timer->stop_fn = stop_fn;
-	timer->status = 0;
+	timer->status = TIMER_NOT_EXPIRED;
 	timer->timeout_api =
 		IS_ENABLED(CONFIG_SYS_CLOCK_EXISTS) ? &Z_SYS_CLOCK_TIMEOUT_API : NULL;
 
@@ -161,7 +172,7 @@ void z_impl_k_timer_start(struct k_timer *timer, k_timeout_t duration,
 		(void)z_timeout_q_abort_timeout_locked(timeout_api, &timer->timeout);
 
 		timer->period = period;
-		timer->status = 0;
+		timer->status = TIMER_NOT_EXPIRED;
 
 		(void)z_timeout_q_add_timeout_locked(timeout_api, &timer->timeout,
 						     z_timer_expiration_handler, duration);
@@ -190,7 +201,7 @@ void z_impl_k_timer_stop(struct k_timer *timer)
 	{
 		was_inactive =
 			(z_timeout_q_abort_timeout_locked(timeout_api, &timer->timeout) != 0);
-		timer->status = 0;
+		timer->status = TIMER_NOT_EXPIRED;
 	}
 
 	if (was_inactive) {
@@ -220,13 +231,22 @@ static inline void z_vrfy_k_timer_stop(struct k_timer *timer)
 #include <syscalls/k_timer_stop_mrsh.c>
 #endif
 
+static inline uint32_t z_impl_k_timer_status_get_locked(struct k_timer *timer)
+{
+	uint32_t status = timer->status == TIMER_NOT_EXPIRED ? 0U : timer->status;
+
+	timer->status = 0U;
+
+	return status;
+}
+
 inline uint32_t z_impl_k_timer_status_get(struct k_timer *timer)
 {
 	uint32_t status = 0;
 
 	K_SPINLOCK(&timer->timeout_api->state->lock)
 	{
-		status = timer->status;
+		status = z_impl_k_timer_status_get_locked(timer);
 	}
 
 	return status;
@@ -255,7 +275,7 @@ uint32_t z_impl_k_timer_status_sync(struct k_timer *timer)
 		do {
 			to_key = k_spin_lock(&timeout_state->lock);
 
-			result = timer->status;
+			result = z_impl_k_timer_status_get_locked(timer);
 
 			if (result > 0) {
 				k_spin_unlock(&timeout_state->lock, to_key);
@@ -279,7 +299,7 @@ uint32_t z_impl_k_timer_status_sync(struct k_timer *timer)
 	 */
 	to_key = k_spin_lock(&timeout_state->lock);
 
-	result = timer->status;
+	result = z_impl_k_timer_status_get_locked(timer);
 
 	if (result == 0U) {
 		if (z_is_inactive_timeout(&timer->timeout)) {
