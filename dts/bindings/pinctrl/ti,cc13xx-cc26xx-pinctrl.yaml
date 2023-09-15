@@ -18,8 +18,7 @@ description: |
     All device pin configurations should be placed in child nodes of the
     'pinctrl' node, as in the i2c0 example shown at the end.
 
-    Here is a list of
-    supported standard pin properties:
+    Here is a list of supported standard pin properties:
 
     - bias-disable: Disable pull-up/down.
     - bias-pull-down: Enable pull-down resistor.
@@ -119,8 +118,9 @@ child-binding:
         - 8
       default: 2
       description: |
-        The drive strength controls the minimum output driver strength of an I/O pin
-        configured as an output.
+        The drive strength controls the minimum output driver strength of an I/O
+        pin configured as an output. See TRM, section 13.7 for available
+        configurations per pin.
           2: min 2 mA (SoC default)
           4: min 4 mA
           8: min 8 mA for for double drive strength IOs, min 4 mA for normal IOs

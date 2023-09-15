@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT ti_cc13xx_cc26xx_ieee802154_subghz
-
 #define LOG_LEVEL CONFIG_IEEE802154_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ieee802154_cc13xx_cc26xx_subg);
@@ -28,6 +26,7 @@ LOG_MODULE_REGISTER(ieee802154_cc13xx_cc26xx_subg);
 #include <driverlib/rfc.h>
 #include <inc/hw_ccfg.h>
 #include <inc/hw_fcfg1.h>
+#include <inc/hw_rfc_dbell.h>
 #include <rf_patches/rf_patch_cpe_multi_protocol.h>
 
 #include <ti/drivers/rf/RF.h>
@@ -59,6 +58,12 @@ extern volatile rfc_CMD_PROP_RADIO_DIV_SETUP_PA_t ieee802154_cc13xx_subg_radio_d
 #endif /* CONFIG_SOC_CC1352x, extern RADIO_DIV_SETUP */
 #else
 
+PINCTRL_DT_DEFINE(DT_RADIO);
+
+#define DEBUG_PIN_SIGNALS                                                                          \
+	RFC_DBELL_SYSGPOCTL_GPOCTL0_CPEGPO0 | RFC_DBELL_SYSGPOCTL_GPOCTL1_CPEGPO1 |                \
+		RFC_DBELL_SYSGPOCTL_GPOCTL2_RATGPO3 | RFC_DBELL_SYSGPOCTL_GPOCTL3_RATGPO0
+
 #if defined(CONFIG_SOC_CC1352R)
 /* Radio register overrides for CC13x2R (note: CC26x2 does not support sub-GHz radio)
  * from SmartRF Studio (200kbps, 50kHz deviation, 2-GFSK, 311.8kHz Rx BW),
@@ -79,6 +84,10 @@ static uint32_t ieee802154_cc13xx_overrides_sub_ghz[] = {
 	HW_REG_OVERRIDE(0x6028, 0x001A),
 	/* Rx: Set AGC reference level to 0x16 (default: 0x2E) */
 	HW_REG_OVERRIDE(0x609C, 0x0016),
+#if NET_TIME_DEBUG_PIN
+	/* Route RAT_GPO3 to RFC_GPO2 for debugging. */
+	HW_REG_OVERRIDE(0x1110, DEBUG_PIN_SIGNALS),
+#endif
 	/* Rx: Set RSSI offset to adjust reported RSSI by -1 dB (default: -2),
 	 * trimmed for external bias and differential configuration
 	 */
@@ -98,6 +107,10 @@ static uint32_t ieee802154_cc13xx_overrides_sub_ghz[] = {
 	ADI_2HALFREG_OVERRIDE(0, 16, 0x8, 0x8, 17, 0x1, 0x0),
 	/* Rx: Set AGC reference level to 0x16 (default: 0x2E) */
 	HW_REG_OVERRIDE(0x609C, 0x0016),
+#if NET_TIME_DEBUG_PIN
+	/* Route RAT_GPO3 to RFC_GPO2 for debugging. */
+	HW_REG_OVERRIDE(0x1110, DEBUG_PIN_SIGNALS),
+#endif
 	/* Rx: Set RSSI offset to adjust reported RSSI by -1 dB (default: -2),
 	 * trimmed for external bias and differential configuration.
 	 */
@@ -317,7 +330,7 @@ static inline int drv_power_down(void)
 static void cmd_prop_tx_adv_callback(RF_Handle h, RF_CmdHandle ch,
 	RF_EventMask e)
 {
-	const struct device *const dev = DEVICE_DT_INST_GET(0);
+	const struct device *const dev = DT_DRIVER_DEVICE;
 	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = dev->data;
 	RF_Op *op = RF_getCmdOp(h, ch);
 
@@ -427,7 +440,7 @@ static void drv_rx_done(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 static void cmd_prop_rx_adv_callback(RF_Handle h, RF_CmdHandle ch,
 	RF_EventMask e)
 {
-	const struct device *const dev = DEVICE_DT_INST_GET(0);
+	const struct device *const dev = DT_DRIVER_DEVICE;
 	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = dev->data;
 	RF_Op *op = RF_getCmdOp(h, ch);
 
@@ -1149,6 +1162,10 @@ static int ieee802154_cc13xx_cc26xx_subg_init(const struct device *dev)
 	RF_EventMask events;
 
 	/* No need for locking - initialization is exclusive. */
+
+	if (DT_DEBUG_PIN_STATE != PINCTRL_STATE_UNDEFINED) {
+		pinctrl_apply_state(DT_DEBUG_PIN_DEV_CONFIG, DT_DEBUG_PIN_STATE);
+	}
 
 	/* Initialize driver data */
 	drv_data_init(drv_data);

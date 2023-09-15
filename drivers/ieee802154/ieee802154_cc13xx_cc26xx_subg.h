@@ -8,6 +8,8 @@
 #ifndef ZEPHYR_DRIVERS_IEEE802154_IEEE802154_CC13XX_CC26XX_SUBG_H_
 #define ZEPHYR_DRIVERS_IEEE802154_IEEE802154_CC13XX_CC26XX_SUBG_H_
 
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/ieee802154.h>
@@ -20,6 +22,27 @@
 #include <driverlib/rf_ieee_cmd.h>
 #include <driverlib/rf_prop_cmd.h>
 #include <driverlib/rf_mailbox.h>
+
+#define DT_DRV_COMPAT ti_cc13xx_cc26xx_ieee802154_subghz
+
+#define DT_DRIVER_DEVICE    DEVICE_DT_INST_GET(0)
+#define DT_RADIO            DT_PARENT(DT_DRV_INST(0))
+
+#define PINCTRL_STATE_UNDEFINED -1
+#define PINCTRL_STATE_OFF       0
+#define PINCTRL_STATE_RX        1
+#define PINCTRL_STATE_TX        2
+#define PINCTRL_STATE_ALL       3
+
+#define PINCTRL_STATE2(idx) PINCTRL_STATE_##idx
+#define PINCTRL_STATE(idx)  PINCTRL_STATE2(idx)
+
+#define DT_DEBUG_PIN_DEV_CONFIG PINCTRL_DT_DEV_CONFIG_GET(DT_RADIO)
+#define DT_DEBUG_PIN_STATE                                                                         \
+	PINCTRL_STATE(DT_STRING_UPPER_TOKEN_OR(DT_RADIO, debug_pins, UNDEFINED))
+
+#define NET_TIME_DEBUG_PIN                                                                         \
+	(DT_DEBUG_PIN_STATE != PINCTRL_STATE_UNDEFINED) && (DT_DEBUG_PIN_STATE != PINCTRL_STATE_OFF)
 
 #define CC13XX_CC26XX_NUM_RX_BUF \
 	CONFIG_IEEE802154_CC13XX_CC26XX_SUB_GHZ_NUM_RX_BUF

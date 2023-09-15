@@ -58,4 +58,39 @@
 		pinmux = <11 IOC_PORT_MCU_SSI0_FSS>;
 		bias-disable;
 	};
+
+	/* Radio Debugging */
+
+	/* green LED */
+	radio_rx_off: gpio-07 {
+		pinmux = <7 IOC_PORT_GPIO>;
+		bias-disable;
+	};
+	radio_rx_on: rfc-gpo0-07 {
+		pinmux = <7 IOC_PORT_RFC_GPO0>;
+		bias-disable;
+		drive-strength = <4>;
+	};
+
+	/* red LED */
+	radio_tx_off: gpio-06 {
+		pinmux = <6 IOC_PORT_GPIO>;
+		bias-disable;
+	};
+	radio_tx_on: rfc-gpo3-06 {
+		pinmux = <6 IOC_PORT_RFC_GPO1>;
+		bias-disable;
+		drive-strength = <4>;
+	};
+
+	/* blue LED */
+	radio_timer_off: gpio-21 {
+		pinmux = <21 IOC_PORT_GPIO>;
+		bias-disable;
+	};
+	radio_timer_on: rfc-gpo3-21 {
+		pinmux = <21 IOC_PORT_RFC_GPO2>;
+		bias-disable;
+		drive-strength = <4>;
+	};
 };

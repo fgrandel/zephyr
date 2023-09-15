@@ -76,6 +76,9 @@ struct ieee802154_cc13xx_cc26xx_net_time_counter {
 
 	/* RAT Compare configuration for overflow handling */
 	RF_RatConfigCompare rat_overflow_trigger_config;
+#if NET_TIME_DEBUG_PIN
+	RF_RatConfigOutput rat_io_config;
+#endif
 };
 
 static struct ieee802154_cc13xx_cc26xx_net_time_reference {
@@ -261,6 +264,12 @@ static uint64_t ieee802154_cc13xx_cc26xx_net_time_counter_elapsed(void)
 	return elapsed;
 }
 
+#if NET_TIME_DEBUG_PIN
+#define NET_TIME_DEBUG_PIN_CONFIG(counter) &counter->rat_io_config
+#else
+#define NET_TIME_DEBUG_PIN_CONFIG(counter) NULL
+#endif
+
 /* ticks are relative to "now", i.e. announced + elapsed */
 static void ieee802154_cc13xx_cc26xx_net_time_counter_set_timeout(int64_t ticks, bool idle)
 {
@@ -287,7 +296,8 @@ static void ieee802154_cc13xx_cc26xx_net_time_counter_set_timeout(int64_t ticks,
 		counter->rat_overflow_trigger_config.timeout = timeout;
 	}
 
-	rat_handle = RF_ratCompare(counter->rf_handle, &counter->rat_overflow_trigger_config, NULL);
+	rat_handle = RF_ratCompare(counter->rf_handle, &counter->rat_overflow_trigger_config,
+				   NET_TIME_DEBUG_PIN_CONFIG(counter));
 	if (rat_handle == RF_ALLOC_ERROR) {
 		NET_ERR("Could not allocate RAT channel for overflow trigger.");
 	}
@@ -302,7 +312,7 @@ static int ieee802154_cc13xx_cc26xx_net_time_counter_init(const struct net_time_
 	struct ieee802154_cc13xx_cc26xx_subg_data *drv_data = net_if_get_device(iface)->data;
 	struct ieee802154_cc13xx_cc26xx_net_time_counter *counter =
 		(struct ieee802154_cc13xx_cc26xx_net_time_counter *)api;
-	RF_RatConfigCompare *config = &counter->rat_overflow_trigger_config;
+	RF_RatConfigCompare *rat_config = &counter->rat_overflow_trigger_config;
 
 	/* No need for locking as this function will not experience concurrency. */
 
@@ -311,9 +321,16 @@ static int ieee802154_cc13xx_cc26xx_net_time_counter_init(const struct net_time_
 	__ASSERT_NO_MSG(drv_data->rf_handle);
 	counter->rf_handle = drv_data->rf_handle;
 
-	RF_RatConfigCompare_init(config);
-	config->callback = &on_rat_triggered;
-	config->channel = RF_RatChannelAny;
+	RF_RatConfigCompare_init(rat_config);
+	rat_config->callback = &on_rat_triggered;
+	rat_config->channel = RF_RatChannelAny;
+
+#if NET_TIME_DEBUG_PIN
+	counter->rat_io_config = (RF_RatConfigOutput) {
+		.mode = RF_RatOutputModePulse,
+		.select = RF_RatOutputSelectRatGpo3,
+	};
+#endif
 
 	return 0;
 }

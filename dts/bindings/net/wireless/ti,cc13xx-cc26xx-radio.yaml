@@ -5,8 +5,23 @@ description: TI SimpleLink CC13xx / CC26xx radio node
 
 compatible: "ti,cc13xx-cc26xx-radio"
 
-include: base.yaml
+include: [pinctrl-device.yaml, base.yaml]
 
 properties:
   reg:
     required: true
+
+  debug-pins:
+    type: string
+    description: |
+      Indicates the radio debug level to be enabled:
+        - off: The radio debug pins will be put in a passive state (high z).
+        - rx: The configured radio RX debug pin will indicate RX slots.
+        - tx: The configured radio TX debug pin will indicate outgoing TX
+              packets.
+        - all: The debug pins will indicate both, RX and TX activity.
+    enum:
+      - "off"
+      - "rx"
+      - "tx"
+      - "all"

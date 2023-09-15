@@ -164,6 +164,21 @@
 
 &radio {
 	status = "okay";
+
+	/* Pins to debug RX or TX timing:
+	 * radio_rx_on: mapped to CPEGPO0 via RFC_GPO0,
+	 * radio_tx_on: mapped to RATGPO0 via RFC_GPO3,
+	 * see TRM, 25.3.2.8
+	 *
+	 * The corresponding _off variants should be mapped to
+	 * IOC_PORT_GPIO.
+	 */
+	pinctrl-0 = <&radio_rx_off &radio_tx_off &radio_timer_off>;
+	pinctrl-1 = <&radio_rx_on &radio_tx_off &radio_timer_on>;
+	pinctrl-2 = <&radio_rx_off &radio_tx_on &radio_timer_on>;
+	pinctrl-3 = <&radio_rx_on &radio_tx_on &radio_timer_on>;
+	pinctrl-names = "off", "rx", "tx", "all";
+	debug-pins = "all";
 };
 
 &ieee802154 {
