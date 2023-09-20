@@ -20,6 +20,7 @@ LOG_MODULE_REGISTER(ieee802154_cc13xx_cc26xx_subg);
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/crc.h>
 #include <zephyr/sys/sys_io.h>
+#include <zephyr/sys/util.h>
 
 #include <driverlib/rf_mailbox.h>
 #include <driverlib/rf_prop_mailbox.h>
@@ -339,13 +340,31 @@ static void cmd_prop_tx_adv_callback(RF_Handle h, RF_CmdHandle ch,
 		op->commandNo, op->status, drv_data->cmd_prop_tx_adv.status, e);
 }
 
+/* constants used to calculate the LQI from the RSSI */
+#define RX_SENSITIVITY_DBM               -110
+#define RX_SATURATION_DBM                10
+#define LQI_MIN_DBM_ABOVE_RX_SENSITIVITY 10
+#define LQI_MAX                          0xFF
+#define LQI_MIN_RSSI_DBM (RX_SENSITIVITY_DBM + LQI_MIN_DBM_ABOVE_RX_SENSITIVITY)
+#define LQI_MAX_RSSI_DBM RX_SATURATION_DBM
+
+static uint8_t drv_lqi_from_rssi(int8_t rssi)
+{
+	/* As the proprietary radio does not report preamble or sync word
+	 * correlations, we have to calculate the LQI from RSSI alone. This is
+	 * not ideal as an interferer will increase the RSSI value although it
+	 * actually decreases SNR and correlation (and therefore LQI).
+	 */
+	rssi = CLAMP(rssi, LQI_MIN_RSSI_DBM, LQI_MAX_RSSI_DBM);
+
+	/* Calculate LQI by normalizing and scaling RSSI. Multiply before
+	 * dividing for minimal rounding error.
+	 */
+	return (LQI_MAX * (rssi - LQI_MIN_RSSI_DBM)) / (LQI_MAX_RSSI_DBM - LQI_MIN_RSSI_DBM);
+}
+
 static void drv_rx_done(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 {
-	int8_t rssi, status;
-	struct net_pkt *pkt;
-	uint8_t len;
-	uint8_t *sdu;
-
 	/* No need for locking as only immutable data is accessed from drv_data.
 	 * The rx queue itself (entries and data) are managed and protected
 	 * internally by TI's RF driver.
@@ -400,12 +419,12 @@ static void drv_rx_done(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 
 			drv_data->rx_entry[i].status = DATA_ENTRY_PENDING;
 
-			/* TODO: Determine LQI in PROP mode. */
-			net_pkt_set_ieee802154_lqi(pkt, 0xff);
 			if (rssi == CC13XX_CC26XX_INVALID_RSSI) {
+				net_pkt_set_ieee802154_lqi(pkt, 0);
 				net_pkt_set_ieee802154_rssi_dbm(pkt,
 								IEEE802154_MAC_RSSI_DBM_UNDEFINED);
 			} else {
+				net_pkt_set_ieee802154_lqi(pkt, drv_lqi_from_rssi(rssi));
 				net_pkt_set_ieee802154_rssi_dbm(pkt, rssi);
 			}
 
