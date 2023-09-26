@@ -18,6 +18,9 @@
 
 #include <stdint.h>
 
+#include <zephyr/kernel.h>
+#include <zephyr/net/net_linkaddr.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

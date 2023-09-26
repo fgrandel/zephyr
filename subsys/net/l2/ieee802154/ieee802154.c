@@ -39,11 +39,9 @@ LOG_MODULE_REGISTER(net_ieee802154, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #include "ieee802154_mgmt_priv.h"
 #include "ieee802154_priv.h"
 #include "ieee802154_security.h"
+#include "ieee802154_tsch_op.h"
 #include "ieee802154_utils.h"
 
-#ifdef CONFIG_NET_L2_IEEE802154_TSCH
-#include "ieee802154_tsch_op.h"
-#endif
 #define BUF_TIMEOUT K_MSEC(50)
 
 NET_BUF_POOL_DEFINE(tx_frame_buf_pool, 1, IEEE802154_MTU, 8, NULL);
@@ -72,7 +70,7 @@ static inline void pkt_hexdump(const char *title, struct net_pkt *pkt, bool in)
 #endif /* CONFIG_NET_DEBUG_L2_IEEE802154_DISPLAY_PACKET */
 
 static inline void ieee802154_acknowledge(struct net_if *iface, struct ieee802154_mpdu *mpdu,
-					  int16_t time_correction_us)
+					  int16_t time_correction_us, bool is_ack)
 {
 	struct net_pkt *pkt;
 
@@ -93,7 +91,7 @@ static inline void ieee802154_acknowledge(struct net_if *iface, struct ieee80215
 		mpdu->mhr.frame_control.frame_version == IEEE802154_VERSION_802154;
 
 	pkt = requires_enh_ack_frame
-		      ? ieee802154_create_enh_ack_frame(iface, mpdu, false, time_correction_us)
+		      ? ieee802154_create_enh_ack_frame(iface, mpdu, is_ack, time_correction_us)
 		      : ieee802154_create_imm_ack_frame(iface, mpdu->mhr.sequence);
 #else
 	pkt = ieee802154_create_imm_ack_frame(iface, mpdu->mhr.sequence);
@@ -170,7 +168,16 @@ enum net_verdict ieee802154_handle_ack(struct net_if *iface, struct net_pkt *pkt
 			return NET_DROP;
 		}
 
-		/* TODO: handle time correction IE (requires TSCH operation) */
+		if (IEEE802154_TSCH_MODE_ON(ctx) && mpdu.mhr.header_ies.time_correction) {
+			ieee802154_tsch_handle_time_correction(
+				iface, ieee802154_header_ie_get_time_correction_us(
+					       mpdu.mhr.header_ies.time_correction));
+
+			if (mpdu.mhr.header_ies.time_correction->time_sync_info &
+			    IEEE802154_HEADER_IE_TIME_CORRECTION_NACK) {
+				return NET_DROP;
+			}
+		}
 	}
 
 	k_sem_give(&ctx->ack_lock);
@@ -209,18 +216,22 @@ int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_
 	/* In the TSCH case retransmission needs to be handled by the TSCH state
 	 * machine rather than here.
 	 */
-	uint8_t remaining_attempts = IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)
-					     ? 1U
-					     : CONFIG_NET_L2_IEEE802154_RADIO_TX_RETRIES + 1;
 	enum ieee802154_hw_caps hw_caps = ieee802154_radio_get_hw_capabilities(iface);
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	bool hw_csma, hw_cca = false, ack_required;
 	enum ieee802154_tx_mode tx_mode;
+	uint8_t remaining_attempts;
+	bool tsch_mode;
 	int ret;
 
 	NET_DBG("frag %p", frag);
 
-	if (!IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH) &&
-	    (hw_caps & IEEE802154_HW_RETRANSMISSION)) {
+	/* Get TSCH mode atomically so we don't have to keep the context locked. */
+	tsch_mode = IEEE802154_TSCH_MODE_ON(ctx);
+
+	remaining_attempts = tsch_mode ? 1U : CONFIG_NET_L2_IEEE802154_RADIO_TX_RETRIES + 1;
+
+	if (!tsch_mode && (hw_caps & IEEE802154_HW_RETRANSMISSION)) {
 		/* A driver that claims retransmission capability must also be able
 		 * to wait for ACK frames otherwise it could not decide whether or
 		 * not retransmission is required in a standard conforming way.
@@ -232,18 +243,12 @@ int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_
 	hw_csma = IS_ENABLED(CONFIG_NET_L2_IEEE802154_RADIO_CSMA_CA) &&
 		  (hw_caps & IEEE802154_HW_CSMA);
 
-#ifdef CONFIG_NET_L2_IEEE802154_TSCH
-	hw_cca = hw_caps & IEEE802154_HW_CCA &&
-		 /* No need to lock the context as tsch_cca is immutable while TSCH mode is on. */
-		 ((struct ieee802154_context *)net_if_l2_data(iface))->tsch_cca;
-#endif
-
-	if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)) {
-		/* TODO: Implement an approximate alternative for drivers that do
-		 * not support TX time.
-		 */
+	if (tsch_mode) {
 		__ASSERT_NO_MSG(IS_ENABLED(CONFIG_NET_PKT_TXTIME) &&
 				(hw_caps & IEEE802154_HW_TXTIME));
+
+		/* No need to lock the context as tsch_cca is immutable while TSCH mode is on. */
+		hw_cca = IEEE802154_TSCH_CCA(ctx) && (hw_caps & IEEE802154_HW_CCA);
 
 		tx_mode = hw_cca ? IEEE802154_TX_MODE_TXTIME_CCA : IEEE802154_TX_MODE_TXTIME;
 	} else {
@@ -293,7 +298,25 @@ int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_
 			return 0;
 		}
 
-		/* TODO: TSCH ACK timing via receive window. */
+#ifdef CONFIG_NET_L2_IEEE802154_TSCH
+		if (tsch_mode) {
+			/* No need to lock the context as in TSCH mode
+			 * tsch_timeslot_template is immutable and the channel is
+			 * exclusively managed by the TSCH thread (which calls
+			 * this function).
+			 */
+			struct ieee802154_config config = {
+				.rx_slot = {
+					.start = ieee802154_radio_get_time(iface) +
+						 ctx->tsch_timeslot_template.tx_ack_delay *
+							 NSEC_PER_USEC,
+					.duration = ctx->tsch_timeslot_template.ack_wait *
+						    NSEC_PER_USEC,
+					.channel = ctx->channel,
+				}};
+			(void)ieee802154_radio_configure(iface, IEEE802154_CONFIG_RX_SLOT, &config);
+		}
+#endif
 
 		/* No-op in case the driver has IEEE802154_HW_TX_RX_ACK capability. */
 		ret = ieee802154_wait_for_ack(iface, ack_required);
@@ -308,9 +331,47 @@ int ieee802154_radio_send(struct net_if *iface, struct net_pkt *pkt, struct net_
 	return -EIO;
 }
 
-static inline void swap_and_set_pkt_ll_addr(struct net_linkaddr *addr, bool has_pan_id,
-					    enum ieee802154_addressing_mode mode,
-					    struct ieee802154_address_field *ll)
+static inline void get_pkt_ll_addr(uint8_t *addr_buf, bool has_pan_id,
+				   enum ieee802154_addressing_mode mode,
+				   struct ieee802154_address_field *ll, struct net_linkaddr *addr)
+{
+	addr->type = NET_LINK_IEEE802154;
+	addr->addr = addr_buf;
+
+	switch (mode) {
+	case IEEE802154_ADDR_MODE_EXTENDED:
+		addr->len = IEEE802154_EXT_ADDR_LENGTH;
+		memcpy(addr_buf, has_pan_id ? ll->plain.addr.ext_addr : ll->comp.addr.ext_addr,
+		       IEEE802154_EXT_ADDR_LENGTH);
+		break;
+
+	case IEEE802154_ADDR_MODE_SHORT:
+		addr->len = IEEE802154_SHORT_ADDR_LENGTH;
+		memcpy(addr_buf,
+		       (uint8_t *)(has_pan_id ? &ll->plain.addr.short_addr
+					      : &ll->comp.addr.short_addr),
+		       IEEE802154_SHORT_ADDR_LENGTH);
+		break;
+
+	case IEEE802154_ADDR_MODE_NONE:
+	default:
+		addr->len = 0U;
+	}
+
+	/* The net stack expects link layer addresses to be in
+	 * big endian format for posix compliance so we must swap it.
+	 * This is ok as the L2 address field comes from the header
+	 * part of the packet buffer which will not be directly accessible
+	 * once the packet reaches the upper layers.
+	 */
+	if (addr->len > 0) {
+		sys_mem_swap(addr->addr, addr->len);
+	}
+}
+
+static void swap_and_set_pkt_ll_addr(struct net_linkaddr *addr, bool has_pan_id,
+				     enum ieee802154_addressing_mode mode,
+				     struct ieee802154_address_field *ll)
 {
 	addr->type = NET_LINK_IEEE802154;
 
@@ -345,12 +406,14 @@ static inline void swap_and_set_pkt_ll_addr(struct net_linkaddr *addr, bool has_
 
 static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pkt)
 {
+	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	struct ieee802154_frame_control *frame_control;
+	enum net_verdict verdict = NET_CONTINUE;
 	struct ieee802154_mpdu mpdu = {0};
 	int16_t time_correction_us = 0;
-	enum net_verdict verdict;
 	size_t ll_hdr_len;
 	bool is_broadcast;
+	bool tsch_mode;
 
 	if (!ieee802154_parse_frame(iface, pkt, &mpdu)) {
 		return NET_DROP;
@@ -358,20 +421,36 @@ static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pk
 
 	frame_control = &mpdu.mhr.frame_control;
 
-	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_BEACON) {
-		verdict = ieee802154_handle_beacon(iface, &mpdu, net_pkt_ieee802154_lqi(pkt));
-		if (verdict == NET_CONTINUE) {
-			net_pkt_unref(pkt);
-			return NET_OK;
-		}
-		/* Beacons must not be acknowledged, see section 6.7.4.1. */
-		return verdict;
+	/* Get TSCH mode atomically so we don't have to keep the context locked. */
+	tsch_mode = IEEE802154_TSCH_MODE_ON(ctx);
+
+	if (tsch_mode) {
+		uint8_t ll_addr_buf[IEEE802154_EXT_ADDR_LENGTH];
+		struct net_linkaddr ll_addr;
+
+		get_pkt_ll_addr(ll_addr_buf, frame_control->has_src_pan,
+				frame_control->src_addr_mode, mpdu.mhr.src_addr, &ll_addr);
+		verdict = ieee802154_tsch_handle_rx(iface, &ll_addr, net_pkt_timestamp_ns(pkt),
+						    &time_correction_us);
 	}
 
-	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
-		verdict = ieee802154_handle_mac_command(iface, &mpdu);
-		if (verdict == NET_DROP) {
+	if (verdict == NET_CONTINUE) {
+		if (frame_control->frame_type == IEEE802154_FRAME_TYPE_BEACON) {
+			verdict =
+				ieee802154_handle_beacon(iface, &mpdu, net_pkt_ieee802154_lqi(pkt));
+			if (verdict == NET_CONTINUE) {
+				net_pkt_unref(pkt);
+				return NET_OK;
+			}
+			/* Beacons must not be acknowledged, see section 6.7.4.1. */
 			return verdict;
+		}
+
+		if (frame_control->frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
+			verdict = ieee802154_handle_mac_command(iface, &mpdu);
+			if (!tsch_mode && verdict == NET_DROP) {
+				return verdict;
+			}
 		}
 	}
 
@@ -392,7 +471,12 @@ static enum net_verdict ieee802154_recv(struct net_if *iface, struct net_pkt *pk
 
 	/* Frames that are broadcast must not be acknowledged, see section 6.7.2. */
 	if (!is_broadcast) {
-		ieee802154_acknowledge(iface, &mpdu, time_correction_us);
+		ieee802154_acknowledge(iface, &mpdu, time_correction_us, verdict == NET_CONTINUE);
+	}
+
+	if (verdict == NET_DROP) {
+		/* This is a TSCH NACK. */
+		return verdict;
 	}
 
 	if (frame_control->frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND) {
@@ -653,9 +737,9 @@ void ieee802154_init(struct net_if *iface)
 	memcpy(ctx->linkaddr.addr, eui64_be, IEEE802154_EXT_ADDR_LENGTH);
 	net_if_set_link_addr(iface, ctx->linkaddr.addr, ctx->linkaddr.len, ctx->linkaddr.type);
 
-#ifdef CONFIG_NET_L2_IEEE802154_TSCH
-	ieee802154_tsch_op_init(iface);
-#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
+	if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)) {
+		ieee802154_tsch_op_init(iface);
+	}
 
 	if (IS_ENABLED(CONFIG_IEEE802154_NET_IF_NO_AUTO_START) ||
 	    IS_ENABLED(CONFIG_NET_CONFIG_SETTINGS)) {

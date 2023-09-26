@@ -178,8 +178,8 @@ static inline uint32_t parse_channel_set(char *str_set)
 		}
 
 		chan = atoi(p);
-		if (chan > 0 && chan < 32) {
-			channel_set |= BIT(chan - 1);
+		if (chan >= 0 && chan < 32) {
+			channel_set |= BIT(chan);
 		}
 
 		p = n ? n + 1 : n;

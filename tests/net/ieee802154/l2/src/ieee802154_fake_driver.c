@@ -30,7 +30,13 @@ const uint16_t mock_pan_id = 0xabcd;
 
 static enum ieee802154_hw_caps fake_get_capabilities(const struct device *dev)
 {
-	return IEEE802154_HW_FCS | IEEE802154_HW_TXTIME;
+	enum ieee802154_hw_caps hw_caps = IEEE802154_HW_FCS;
+
+	if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_TSCH)) {
+		hw_caps |= IEEE802154_HW_TXTIME | IEEE802154_HW_RXTIME;
+	}
+
+	return hw_caps;
 }
 
 static int fake_cca(const struct device *dev)

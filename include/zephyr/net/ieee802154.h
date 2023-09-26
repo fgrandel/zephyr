@@ -148,11 +148,13 @@ extern "C" {
 #include <zephyr/net/ieee802154_tsch.h>
 
 #define IEEE802154_TSCH_MODE_ON(ctx) ((ctx)->tsch_mode)
+#define IEEE802154_TSCH_CCA(ctx)     ((ctx)->tsch_cca)
 #define IEEE802154_TSCH_ASN(ctx)     ((ctx)->tsch_asn)
 
 #else /* CONFIG_NET_L2_IEEE802154_TSCH */
 
 #define IEEE802154_TSCH_MODE_ON(ctx) (false && ctx)
+#define IEEE802154_TSCH_CCA(ctx)     (false && ctx)
 #define IEEE802154_TSCH_ASN(ctx)     (UINT64_C(0) && ctx)
 
 #endif /* CONFIG_NET_L2_IEEE802154_TSCH */

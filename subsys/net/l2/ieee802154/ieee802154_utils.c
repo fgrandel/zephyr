@@ -200,4 +200,4 @@ struct ieee802154_tsch_link *ieee802154_ctx_tsch_set_link(struct ieee802154_cont
 
 	return replaced;
 }
-#endif
+#endif /* CONFIG_NET_L2_IEEE802154_TSCH */
