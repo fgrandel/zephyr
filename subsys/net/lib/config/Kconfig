@@ -28,8 +28,8 @@ config NET_CONFIG_AUTO_INIT
 	default y
 	help
 	  If this option is set, then the networking system is automatically
-	  initialized when the device is started. If you do not wish to do
-	  this, then disable this and call net_config_init() in your application.
+	  initialized when the device is started. If you do not wish to do this,
+	  then disable this and call net_config_init_all() in your application.
 
 if NET_CONFIG_AUTO_INIT
 
@@ -68,7 +68,7 @@ config NET_CONFIG_INIT_TIMEOUT
 	default 30
 	help
 	  The value is in seconds. If for example IPv4 address from DHCPv4 is not
-	  received within this limit, then the net_config_init() call will fail
+	  received within this limit, then the net_config_init_all() call will fail
 	  during the device startup.
 
 config NET_CONFIG_MY_VLAN_ID

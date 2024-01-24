@@ -26,6 +26,7 @@ LOG_MODULE_REGISTER(net_core, CONFIG_NET_CORE_LOG_LEVEL);
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_config.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/dns_resolve.h>
 #include <zephyr/net/gptp.h>
@@ -582,6 +583,11 @@ static void init_rx_queues(void)
 	net_if_init();
 
 	net_tc_rx_init();
+
+	/* This might update auto-start flags so it must be run before
+	 * net_if_post_init().
+	 */
+	net_config_pre_init();
 
 	/* This will take the interface up and start everything. */
 	net_if_post_init();

@@ -49,7 +49,7 @@ int main(void)
 		printk("usb enable error %d\n", ret);
 	}
 
-	(void)net_config_init_app(NULL, "Initializing network");
+	(void)net_config_init_all("Initializing network", 0);
 #endif /* CONFIG_USB_DEVICE_STACK */
 
 #if defined(CONFIG_USB_DEVICE_STACK_NEXT)
