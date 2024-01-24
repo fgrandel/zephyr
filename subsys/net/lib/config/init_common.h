@@ -34,7 +34,7 @@
 		    _bracketed_then, _bracketed_else)
 
 #define NET_CONFIG_SUBSTATE_NAME(_iface_node_id, _subnode)                                         \
-	CONCAT(NET_CONFIG_NET_DEVICE_ORD_NAME(_iface_node_id), _net_init_config_, _subnode)
+	CONCAT(NET_CONFIG_NET_DEVICE_ORD_NAME(_iface_node_id), _net_config_, _subnode)
 
 #define NET_CONFIG_SUBSTATE2_NAME(_iface_node_id, _subnode, _subnode2)                             \
 	CONCAT(NET_CONFIG_SUBSTATE_NAME(_iface_node_id, _subnode), _, _subnode2)

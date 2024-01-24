@@ -20,7 +20,7 @@ int init_usb(void)
 		return ret;
 	}
 
-	(void)net_config_init_app(NULL, "Initializing network");
+	(void)net_config_init_all("Initializing network", 0);
 
 	return 0;
 }

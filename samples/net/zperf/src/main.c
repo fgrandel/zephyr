@@ -24,7 +24,7 @@ int main(void)
 		printk("usb enable error %d\n", ret);
 	}
 
-	(void)net_config_init_app(NULL, "Initializing network");
+	(void)net_config_init_all("Initializing network", 0);
 #endif /* CONFIG_USB_DEVICE_STACK */
 #ifdef CONFIG_NET_LOOPBACK_SIMULATE_PACKET_DROP
 	loopback_set_packet_drop_ratio(1);

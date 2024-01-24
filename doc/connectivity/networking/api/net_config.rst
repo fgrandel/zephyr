@@ -35,7 +35,7 @@ setup the system:
    ":kconfig:option:`CONFIG_NET_CONFIG_INIT_TIMEOUT`", "This tells how long to wait for
    the networking to be ready and available. If for example IPv4 address from
    DHCPv4 is not received within this limit, then a call to
-   ``net_config_init()`` will return error during the device startup."
+   ``net_config_init_all()`` will return error during the device startup."
    ":kconfig:option:`CONFIG_NET_CONFIG_NEED_IPV4`", "The network application needs IPv4
    support to function properly. This option makes sure the network application
    is initialized properly in order to use IPv4.
@@ -66,16 +66,13 @@ setup the system:
 Sample usage
 ************
 
-If :kconfig:option:`CONFIG_NET_CONFIG_AUTO_INIT` is set, then the configuration library
-is automatically enabled and run during the device boot. In this case,
-the library will call ``net_config_init()`` automatically and the application
-does not need to do any network configuration.
+If :kconfig:option:`CONFIG_NET_CONFIG_AUTO_INIT` is set, then the configuration
+library is automatically enabled and run during the device boot. In this case,
+the library will call ``net_config_init_all()`` automatically and the
+application does not need to do any network configuration.
 
 If you want to use the network configuration library but without automatic
-initialization, you can call ``net_config_init()`` manually. The ``flags``
-parameter can be used to give hints to the library about what kind of
-functionality the application wishes to have before the actual application
-starts.
+initialization, you can call ``net_config_init_all()`` manually.
 
 API Reference
 *************

@@ -28,7 +28,7 @@ identifier fn =~ "(?x)^
 |can_(write|recover)
 |uart_(tx|rx_enable)
 |dns_(resolve_name|get_addr_info)
-|net_config_init
+|net_config_init_all
 |net_ppp_ping
 |websocket_(send|recv)_msg
 )$";
