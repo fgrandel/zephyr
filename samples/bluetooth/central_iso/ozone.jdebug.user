@@ -1,0 +1,32 @@
+
+
+Breakpoint=/home/fgrandel/Development/zephyrproject/zephyr/samples/bluetooth/central_iso/src/main.c:304, State=BP_STATE_ON
+OpenDocument="priority_queues.c", FilePath="/home/fgrandel/Development/zephyrproject/zephyr/kernel/priority_queues.c", Line=37
+OpenDocument="reset.S", FilePath="/home/fgrandel/Development/zephyrproject/zephyr/arch/arm/core/cortex_m/reset.S", Line=59
+OpenDocument="iso.c", FilePath="/home/fgrandel/Development/zephyrproject/zephyr/subsys/bluetooth/host/iso.c", Line=776
+OpenDocument="radio.c", FilePath="/home/fgrandel/Development/zephyrproject/zephyr/subsys/bluetooth/controller/ll_sw/nordic/hal/nrf5/radio/radio.c", Line=444
+OpenDocument="lll_central_iso.c", FilePath="/home/fgrandel/Development/zephyrproject/zephyr/subsys/bluetooth/controller/ll_sw/nordic/lll/lll_central_iso.c", Line=294
+OpenDocument="isoal.c", FilePath="/home/fgrandel/Development/zephyrproject/zephyr/subsys/bluetooth/controller/ll_sw/isoal.c", Line=1700
+OpenDocument="hci.c", FilePath="/home/fgrandel/Development/zephyrproject/zephyr/subsys/bluetooth/controller/hci/hci.c", Line=448
+OpenDocument="main.c", FilePath="/home/fgrandel/Development/zephyrproject/zephyr/samples/bluetooth/central_iso/src/main.c", Line=281
+OpenToolbar="Debug", Floating=0, x=0, y=0
+OpenWindow="Call Stack", DockArea=LEFT, x=0, y=0, w=300, h=595, TabPos=0, TopOfStack=0, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Registers 1", DockArea=LEFT, x=0, y=0, w=300, h=595, TabPos=1, TopOfStack=0, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0, FilteredItems=[], RefreshRate=1
+OpenWindow="Source Files", DockArea=LEFT, x=0, y=0, w=300, h=595, TabPos=3, TopOfStack=1, FilterBarShown=1, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Disassembly", DockArea=RIGHT, x=0, y=1, w=300, h=314, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Break & Tracepoints", DockArea=BOTTOM, x=0, y=0, w=585, h=448, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0, VectorCatchIndexMask=254
+OpenWindow="Local Data", DockArea=RIGHT, x=0, y=0, w=300, h=292, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Functions", DockArea=LEFT, x=0, y=0, w=300, h=595, TabPos=2, TopOfStack=0, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Terminal", DockArea=BOTTOM, x=1, y=0, w=1329, h=431, TabPos=0, TopOfStack=1, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+OpenWindow="Console", DockArea=BOTTOM, x=1, y=0, w=1329, h=431, TabPos=1, TopOfStack=0, FilterBarShown=0, TotalValueBarShown=0, ToolBarShown=0
+SmartViewPlugin="", Page="", Toolbar="Hidden", Window="SmartView 1"
+TableHeader="Functions", SortCol="Name", SortOrder="ASCENDING", VisibleCols=["Name";"Address";"Size";"#Insts";"Source"], ColWidths=[6832;140;100;100;100]
+TableHeader="Registers 1", SortCol="Name", SortOrder="ASCENDING", VisibleCols=["Name";"Value";"Description"], ColWidths=[106;196;259]
+TableHeader="Call Stack", SortCol="Function", SortOrder="ASCENDING", VisibleCols=["Function";"Stack Frame";"Source";"PC";"Return Address";"Stack Used"], ColWidths=[169;105;100;100;147;100]
+TableHeader="Vector Catches", SortCol="", SortOrder="ASCENDING", VisibleCols=["";"Vector Catch";"Description"], ColWidths=[50;300;500]
+TableHeader="Break & Tracepoints", SortCol="", SortOrder="ASCENDING", VisibleCols=["";"Type";"Location";"Extras"], ColWidths=[100;100;100;481]
+TableHeader="Local Data", SortCol="Name", SortOrder="ASCENDING", VisibleCols=["Name";"Value";"Location";"Size";"Type";"Scope"], ColWidths=[100;100;100;100;175;100]
+TableHeader="Power Sampling", SortCol="None", SortOrder="ASCENDING", VisibleCols=["Index";"Time";"Ch 0"], ColWidths=[100;100;100]
+TableHeader="RegisterSelectionDialog", SortCol="None", SortOrder="ASCENDING", VisibleCols=[], ColWidths=[]
+TableHeader="Source Files", SortCol="File", SortOrder="ASCENDING", VisibleCols=["File";"Status";"Size";"#Insts";"Path"], ColWidths=[218;100;100;100;924]
+TableHeader="TargetExceptionDialog", SortCol="Name", SortOrder="ASCENDING", VisibleCols=["Name";"Value";"Address";"Description"], ColWidths=[200;100;100;359]

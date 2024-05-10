@@ -9,6 +9,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
 #include <tracing_sysview_ids.h>
+#include <tracing_sysview_ble.h>
 
 #include <SEGGER_SYSVIEW.h>
 

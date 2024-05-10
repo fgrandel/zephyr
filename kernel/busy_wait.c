@@ -11,9 +11,9 @@
 
 void z_impl_k_busy_wait(uint32_t usec_to_wait)
 {
-	SYS_PORT_TRACING_FUNC_ENTER(k_thread, busy_wait, usec_to_wait);
+	// SYS_PORT_TRACING_FUNC_ENTER(k_thread, busy_wait, usec_to_wait);
 	if (usec_to_wait == 0U) {
-		SYS_PORT_TRACING_FUNC_EXIT(k_thread, busy_wait, usec_to_wait);
+		// SYS_PORT_TRACING_FUNC_EXIT(k_thread, busy_wait, usec_to_wait);
 		return;
 	}
 
@@ -44,7 +44,7 @@ void z_impl_k_busy_wait(uint32_t usec_to_wait)
 	}
 #endif
 
-	SYS_PORT_TRACING_FUNC_EXIT(k_thread, busy_wait, usec_to_wait);
+	// SYS_PORT_TRACING_FUNC_EXIT(k_thread, busy_wait, usec_to_wait);
 }
 
 #ifdef CONFIG_USERSPACE
