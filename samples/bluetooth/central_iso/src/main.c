@@ -75,6 +75,8 @@ static void iso_timer_timeout(struct k_work *work)
 
 	k_work_schedule(&iso_send_work, K_USEC(INTERVAL_US));
 
+	SEGGER_SYSVIEW_RecordU32x2(SEGGER_SYSVIEW_BLE_PRODUCE_PKT, seq_num, len_to_send);
+
 	len_to_send++;
 	if (len_to_send > ARRAY_SIZE(buf_data)) {
 		len_to_send = 1;
@@ -241,6 +243,8 @@ int main(void)
 
 
 	printk("Bluetooth initialized\n");
+
+	tracing_sysview_ble_start();
 
 	iso_chan.ops = &iso_ops;
 	iso_chan.qos = &iso_qos;

@@ -228,6 +228,8 @@ static int prepare_cb(struct lll_prepare_param *p)
 				break;
 			}
 
+			SEGGER_SYSVIEW_RecordU32x2(SEGGER_SYSVIEW_BLE_SCHEDULE_PKT, payload_count, node_tx->payload_count);
+
 			if (node_tx->payload_count < payload_count) {
 				memq_dequeue(cis_lll->memq_tx.tail,
 					     &cis_lll->memq_tx.head,
@@ -236,6 +238,8 @@ static int prepare_cb(struct lll_prepare_param *p)
 				node_tx->next = link;
 				ull_iso_lll_ack_enqueue(cis_lll->handle,
 							node_tx);
+				SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX_DEQUEUE, node_tx->payload_count);
+
 			} else if (node_tx->payload_count >= (payload_count + cis_lll->tx.bn)) {
 				link = NULL;
 			} else {
@@ -302,6 +306,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 		radio_pkt_configure(RADIO_PKT_CONF_LENGTH_8BIT,
 				    cis_lll->tx.max_pdu, pkt_flags);
 		radio_pkt_tx_set(pdu_tx);
+		SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX, pdu_tx->len);
 	}
 
 	radio_isr_set(isr_tx, cis_lll);
@@ -632,6 +637,7 @@ static void isr_tx(void *param)
 				node_tx->next = link;
 				ull_iso_lll_ack_enqueue(cis_lll->handle,
 							node_tx);
+				SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX_DEQUEUE, node_tx->payload_count);
 			} else if (node_tx->payload_count >=
 				   (payload_count + cis_lll->tx.bn)) {
 				link = NULL;
@@ -715,6 +721,9 @@ static void isr_rx(void *param)
 		if ((pdu_rx->nesn != cis_lll->sn) && (cis_lll->tx.bn_curr <= cis_lll->tx.bn)) {
 			cis_lll->sn++;
 			cis_lll->tx.bn_curr++;
+
+			SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX_ACK, cis_lll->tx.payload_count);
+
 			if ((cis_lll->tx.bn_curr > cis_lll->tx.bn) &&
 			    ((cis_lll->tx.payload_count / cis_lll->tx.bn) < cis_lll->event_count)) {
 				cis_lll->tx.payload_count += cis_lll->tx.bn;
@@ -995,6 +1004,8 @@ static void isr_prepare_subevent(void *param)
 			pdu_tx->cie = 0U;
 			pdu_tx->npi = 0U;
 		}
+
+		SEGGER_SYSVIEW_RecordU32x2(SEGGER_SYSVIEW_BLE_SCHEDULE_PKT, payload_count, node_tx->payload_count);
 	}
 
 	/* Initialize reserve bit */
@@ -1037,6 +1048,7 @@ static void isr_prepare_subevent(void *param)
 		radio_pkt_configure(RADIO_PKT_CONF_LENGTH_8BIT,
 				    cis_lll->tx.max_pdu, pkt_flags);
 		radio_pkt_tx_set(pdu_tx);
+		SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX, pdu_tx->len);
 	}
 
 	lll_chan_set(next_chan_use);

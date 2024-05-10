@@ -1401,6 +1401,7 @@ int ll_iso_tx_mem_enqueue(uint16_t handle, void *node_tx, void *link)
 
 		cis = ll_conn_iso_stream_get(handle);
 		memq_enqueue(link, node_tx, &cis->lll.memq_tx.tail);
+		SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX_ENQUEUE, ((struct node_tx_iso *)node_tx)->payload_count);
 
 	} else if (IS_ENABLED(CONFIG_BT_CTLR_ADV_ISO) &&
 		   IS_ADV_ISO_HANDLE(handle)) {
