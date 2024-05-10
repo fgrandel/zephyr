@@ -250,8 +250,8 @@ int main(void)
 	param.cis_channels = channels;
 	param.num_cis = ARRAY_SIZE(channels);
 	param.sca = BT_GAP_SCA_UNKNOWN;
-	param.packing = 0;
-	param.framing = 0;
+	param.packing = BT_ISO_PACKING_SEQUENTIAL;
+	param.framing = BT_ISO_FRAMING_UNFRAMED;
 	param.c_to_p_latency = latency_ms; /* ms */
 	param.p_to_c_latency = latency_ms; /* ms */
 	param.c_to_p_interval = interval_us; /* us */
