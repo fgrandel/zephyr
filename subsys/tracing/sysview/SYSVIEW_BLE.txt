@@ -1,0 +1,6 @@
+0      ProdPkt     seq=%u len=%u
+1      SchedPkt    pdu_plc=%u node_plc=%u
+2      Tx          len=%u
+3      Enqueue     plc=%u
+4      Dequeue     plc=%u
+5      Ack         plc=%u
