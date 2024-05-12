@@ -26,8 +26,6 @@ static void start_scan(void);
 
 static struct bt_conn *default_conn;
 static struct bt_iso_chan iso_chan;
-static int32_t next_sdu_ts;
-static uint32_t seq_num;
 NET_BUF_POOL_FIXED_DEFINE(tx_pool, 1, BT_ISO_SDU_BUF_SIZE(CONFIG_BT_ISO_TX_MTU),
 			  CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
 
@@ -37,11 +35,11 @@ NET_BUF_POOL_FIXED_DEFINE(tx_pool, 1, BT_ISO_SDU_BUF_SIZE(CONFIG_BT_ISO_TX_MTU),
  * This will send a decreasing amount of ISO data until it reaches 1 byte then
  * it wraps around.
  */
-static void iso_send_sdu(void)
+static void iso_send_sdu(uint32_t seq_num, int32_t next_sdu_ts)
 {
 	static uint8_t buf_data[CONFIG_BT_ISO_TX_MTU];
 	static size_t len_to_send = ARRAY_SIZE(buf_data);
-	static bool is_first_sdu = true;
+	bool is_first_sdu = (next_sdu_ts == -1);
 	struct net_buf *buf;
 	int ret;
 
@@ -54,12 +52,10 @@ static void iso_send_sdu(void)
 
 	buf = net_buf_alloc(&tx_pool, K_FOREVER);
 	net_buf_reserve(buf, BT_ISO_CHAN_SEND_RESERVE);
-
 	net_buf_add_mem(buf, buf_data, len_to_send);
 
 	if (unlikely(is_first_sdu)) {
 		ret = bt_iso_chan_send(&iso_chan, buf, seq_num);
-		is_first_sdu = false;
 	} else {
 		ret = bt_iso_chan_send_ts(&iso_chan, buf, seq_num, next_sdu_ts);
 	}
@@ -93,15 +89,7 @@ static void iso_sent(struct bt_iso_chan *chan)
 		return;
 	}
 
-	if (iso_tx_info.seq_num != seq_num) {
-		printk("Lost sequence numbers between %" PRIu32 " and %" PRIu32 " \n",
-			   seq_num, iso_tx_info.seq_num - 1);
-	}
-
-	seq_num = iso_tx_info.seq_num + 1;
-	next_sdu_ts = iso_tx_info.ts + INTERVAL_US;
-
-	iso_send_sdu();
+	iso_send_sdu(iso_tx_info.seq_num + 1, iso_tx_info.ts + INTERVAL_US);
 }
 
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
@@ -158,9 +146,7 @@ static void iso_connected(struct bt_iso_chan *chan)
 {
 	printk("ISO Channel %p connected\n", chan);
 
-	seq_num = 1U;
-
-	iso_send_sdu();
+	iso_send_sdu(1U, -1);
 }
 
 static void iso_disconnected(struct bt_iso_chan *chan, uint8_t reason)
