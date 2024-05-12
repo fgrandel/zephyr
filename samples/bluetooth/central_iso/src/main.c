@@ -25,8 +25,8 @@
 static void start_scan(void);
 
 static struct bt_conn *default_conn;
-static struct k_work_delayable iso_send_work;
 static struct bt_iso_chan iso_chan;
+static int32_t next_sdu_ts;
 static uint32_t seq_num;
 NET_BUF_POOL_FIXED_DEFINE(tx_pool, 1, BT_ISO_SDU_BUF_SIZE(CONFIG_BT_ISO_TX_MTU),
 			  CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
@@ -36,23 +36,20 @@ NET_BUF_POOL_FIXED_DEFINE(tx_pool, 1, BT_ISO_SDU_BUF_SIZE(CONFIG_BT_ISO_TX_MTU),
  *
  * This will send a decreasing amount of ISO data until it reaches 1 byte then
  * it wraps around.
- *
- * @param work Pointer to the work structure
  */
-static void iso_timer_timeout(struct k_work *work)
+static void iso_send_sdu(void)
 {
 	static uint8_t buf_data[CONFIG_BT_ISO_TX_MTU];
 	static size_t len_to_send = ARRAY_SIZE(buf_data);
-	static bool data_initialized;
+	static bool is_first_sdu = true;
 	struct net_buf *buf;
 	int ret;
 
-	if (!data_initialized) {
+	if (is_first_sdu) {
+		/* initialize mock data */
 		for (int i = 0; i < ARRAY_SIZE(buf_data); i++) {
 			buf_data[i] = (uint8_t)i;
 		}
-
-		data_initialized = true;
 	}
 
 	buf = net_buf_alloc(&tx_pool, K_FOREVER);
@@ -60,14 +57,17 @@ static void iso_timer_timeout(struct k_work *work)
 
 	net_buf_add_mem(buf, buf_data, len_to_send);
 
-	ret = bt_iso_chan_send(&iso_chan, buf, seq_num++);
+	if (unlikely(is_first_sdu)) {
+		ret = bt_iso_chan_send(&iso_chan, buf, seq_num);
+		is_first_sdu = false;
+	} else {
+		ret = bt_iso_chan_send_ts(&iso_chan, buf, seq_num, next_sdu_ts);
+	}
 
 	if (ret < 0) {
 		printk("Failed to send ISO data (%d)\n", ret);
 		net_buf_unref(buf);
 	}
-
-	k_work_schedule(&iso_send_work, K_USEC(INTERVAL_US));
 
 	SEGGER_SYSVIEW_RecordU32x2(SEGGER_SYSVIEW_BLE_PRODUCE_PKT, seq_num, len_to_send);
 
@@ -75,6 +75,33 @@ static void iso_timer_timeout(struct k_work *work)
 	if (len_to_send == 0) {
 		len_to_send = ARRAY_SIZE(buf_data);
 	}
+}
+
+static void iso_sent(struct bt_iso_chan *chan)
+{
+	struct bt_iso_tx_info iso_tx_info = {0};
+	int err;
+
+	err = bt_iso_chan_get_tx_sync(chan, &iso_tx_info);
+	if (err) {
+		printk("Failed obtaining timestamp\n");
+		return;
+	}
+
+	if (iso_tx_info.offset) {
+		printk("Offset should be zero for unframed PDUs\n");
+		return;
+	}
+
+	if (iso_tx_info.seq_num != seq_num) {
+		printk("Lost sequence numbers between %" PRIu32 " and %" PRIu32 " \n",
+			   seq_num, iso_tx_info.seq_num - 1);
+	}
+
+	seq_num = iso_tx_info.seq_num + 1;
+	next_sdu_ts = iso_tx_info.ts + INTERVAL_US;
+
+	iso_send_sdu();
 }
 
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
@@ -131,20 +158,19 @@ static void iso_connected(struct bt_iso_chan *chan)
 {
 	printk("ISO Channel %p connected\n", chan);
 
-	seq_num = 0U;
+	seq_num = 1U;
 
-	/* Start send timer */
-	k_work_schedule(&iso_send_work, K_MSEC(0));
+	iso_send_sdu();
 }
 
 static void iso_disconnected(struct bt_iso_chan *chan, uint8_t reason)
 {
 	printk("ISO Channel %p disconnected (reason 0x%02x)\n", chan, reason);
-	k_work_cancel_delayable(&iso_send_work);
 }
 
 static struct bt_iso_chan_ops iso_ops = {
 	.connected	= iso_connected,
+	.sent = iso_sent,
 	.disconnected	= iso_disconnected,
 };
 
@@ -266,6 +292,5 @@ int main(void)
 
 	start_scan();
 
-	k_work_init_delayable(&iso_send_work, iso_timer_timeout);
 	return 0;
 }
