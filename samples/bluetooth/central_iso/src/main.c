@@ -32,22 +32,17 @@ NET_BUF_POOL_FIXED_DEFINE(tx_pool, 1, BT_ISO_SDU_BUF_SIZE(CONFIG_BT_ISO_TX_MTU),
 			  CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
 
 /**
- * @brief Send ISO data on timeout
+ * @brief Send ISO data SDU
  *
- * This will send an increasing amount of ISO data, starting from 1 octet.
- *
- * First iteration : 0x00
- * Second iteration: 0x00 0x01
- * Third iteration : 0x00 0x01 0x02
- *
- * And so on, until it wraps around the configured ISO TX MTU (CONFIG_BT_ISO_TX_MTU)
+ * This will send a decreasing amount of ISO data until it reaches 1 byte then
+ * it wraps around.
  *
  * @param work Pointer to the work structure
  */
 static void iso_timer_timeout(struct k_work *work)
 {
 	static uint8_t buf_data[CONFIG_BT_ISO_TX_MTU];
-	static size_t len_to_send = 1;
+	static size_t len_to_send = ARRAY_SIZE(buf_data);
 	static bool data_initialized;
 	struct net_buf *buf;
 	int ret;
@@ -76,9 +71,9 @@ static void iso_timer_timeout(struct k_work *work)
 
 	SEGGER_SYSVIEW_RecordU32x2(SEGGER_SYSVIEW_BLE_PRODUCE_PKT, seq_num, len_to_send);
 
-	len_to_send++;
-	if (len_to_send > ARRAY_SIZE(buf_data)) {
-		len_to_send = 1;
+	len_to_send--;
+	if (len_to_send == 0) {
+		len_to_send = ARRAY_SIZE(buf_data);
 	}
 }
 
