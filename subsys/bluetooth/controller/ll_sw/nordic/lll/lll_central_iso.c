@@ -228,7 +228,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 				break;
 			}
 
-			SEGGER_SYSVIEW_RecordU32x2(SEGGER_SYSVIEW_BLE_SCHEDULE_PKT, payload_count - 1, node_tx->payload_count - 1);
+			SEGGER_SYSVIEW_RecordU32x2(SEGGER_SYSVIEW_BLE_SCHEDULE_PKT, payload_count, node_tx->payload_count);
 
 			if (node_tx->payload_count < payload_count) {
 				memq_dequeue(cis_lll->memq_tx.tail,
@@ -238,7 +238,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 				node_tx->next = link;
 				ull_iso_lll_ack_enqueue(cis_lll->handle,
 							node_tx);
-				SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX_DEQUEUE, node_tx->payload_count - 1);
+				SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX_DEQUEUE, node_tx->payload_count);
 
 			} else if (node_tx->payload_count >= (payload_count + cis_lll->tx.bn)) {
 				link = NULL;
@@ -637,7 +637,7 @@ static void isr_tx(void *param)
 				node_tx->next = link;
 				ull_iso_lll_ack_enqueue(cis_lll->handle,
 							node_tx);
-				SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX_DEQUEUE, node_tx->payload_count - 1);
+				SEGGER_SYSVIEW_RecordU32(SEGGER_SYSVIEW_BLE_TX_DEQUEUE, node_tx->payload_count);
 			} else if (node_tx->payload_count >=
 				   (payload_count + cis_lll->tx.bn)) {
 				link = NULL;
@@ -1004,6 +1004,8 @@ static void isr_prepare_subevent(void *param)
 			pdu_tx->cie = 0U;
 			pdu_tx->npi = 0U;
 		}
+
+		SEGGER_SYSVIEW_RecordU32x2(SEGGER_SYSVIEW_BLE_SCHEDULE_PKT, payload_count, node_tx->payload_count);
 	}
 
 	/* Initialize reserve bit */
