@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024 The Zephyr Project
+
+#include "lib/sntp.config.yaml"
+
+- x-subsys-net-lib: &subsys_net_lib
+    lib:
+      <<: *subsys_net_lib_sntp

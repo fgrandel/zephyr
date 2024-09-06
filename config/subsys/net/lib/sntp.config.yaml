@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024 The Zephyr Project
+
+- x-subsys-net-lib-sntp: &subsys_net_lib_sntp
+    sntp:
+      sntp-servers:
+        schema: zephyr,net-lib-sntp-servers

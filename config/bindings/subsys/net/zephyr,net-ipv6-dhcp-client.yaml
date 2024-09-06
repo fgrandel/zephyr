@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  IPv6 DHCP client configuration.
+
+  All nodes using this binding SHALL be called "dhcp-client" and SHALL be placed
+  inside the corresponding "ipv6" node.
+
+schema: "zephyr,net-ipv6-dhcp-client"
+
+properties:
+  req-addr:
+    type: boolean
+    description: Whether to request an address from the DHCP server.
+
+  req-prefix:
+    type: boolean
+    description: Whether to request a prefix from the DHCP server.

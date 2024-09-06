@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  IPv4 configuration.
+
+  All nodes using this binding SHALL be called "ipv4" and SHALL be placed inside
+  the corresponding "iface" node.
+
+schema: "zephyr,net-ipv4"
+
+properties:
+  addrs:
+    type: string-array
+    description: |
+      One or several statically configured IPv4 addresses optionally including
+      subnet mask bits, e.g. "192.0.2.10/24".
+
+  ttl:
+    type: int
+    description: IPv4 time to live.
+    default: 64
+
+  mcast-addrs:
+    type: string-array
+    description: |
+      List of IPv4 multicast addresses, e.g. "234.0.0.10", "234.0.0.11".
+
+  mcast-ttl:
+    type: int
+    description: IPv4 multicast time to live.
+    default: 1
+
+  mcast-hop-limit:
+    type: int
+    description: IPv4 multicast hop limit.
+    default: 1
+
+  gateway:
+    type: string
+    description: IPv4 gateway address, e.g. "192.0.2.1".
+
+  autoconf:
+    type: boolean
+    description: |
+      Enable IPv4 auto-configuration for this interface, requires
+      CONFIG_NET_IPV4_AUTO.

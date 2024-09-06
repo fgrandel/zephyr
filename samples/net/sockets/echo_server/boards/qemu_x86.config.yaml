@@ -1,0 +1,109 @@
+# SPDX-License-Identifier: Apache-2.0 */
+
+#
+# Sample network subsystem configuration.
+#
+
+#include "zephyr/dt-bindings/subsys/net/if_flags.h"
+
+- /subsys/net:
+    wpan0:
+      # Schemas can be composed. Our previous binding approach only allowed
+      # matching a single binding per node and otherwise polymorphism of schemas
+      # could only be achieved via inheritance. In general we should prefer
+      # composition over inheritance where applicable.
+      #
+      # Due to composition now being part of the common binding engine of DT and
+      # configuration, we can use it in DT, too. We have several long-standing DT
+      # issues that can be resolved by the compositional approach.
+      #
+      # If the selected subsystem does not support one of the properties in a
+      # config file, it will be ignored (e.g. if a newer config file is used with
+      # an older version of the subsystem).
+      #
+      # This example shows that both, inheritance and composition, have legitimate
+      # uses:
+      #  - We compose driver configuration properties (potentially even vendor
+      #    specific) with generic IEEE 802.15.4 L2 properties.
+      #  - We let the native IEEE 802.15.4 L2 schema inherit from a generic IEEE
+      #    802.15.4 L2 schema which will be shared by all IEEE 802.15.4 L2 stacks.
+      #
+      # Note: One reason (but not the only one), why we cannot use YAML tags to
+      # specify schemas is that tags cannot be composed.
+      schema: "zephyr,net-l2-ieee802154-native" # inherits from zephyr,net-l2-ieee802154
+
+      # TODO: For virtual interfaces (vlan, bridge, tunnel, etc.):
+      # schema: zephyr,net-iface-virtual
+
+      device: ieee802154
+
+      pan-id: 0xabcd # CPU encoding
+      ext-addr: c2 a3 9e 00 00 4b 12 00 # big endian
+      default-channel: 26
+      # Uncomment for 868 MHz: default-channel: 0
+      # Uncomment for 906 MHz: default-channel: 1
+      default-tx-pwr: 1
+      # security key: 16 bytes (deprecated)
+      sec-key: c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 ca cb cc cd ce cf
+      sec-key-mode: 0
+      sec-level: 1
+      no-ack: true
+
+      is-default: true
+      clear-flags: (NET_IF_NO_AUTO_START|NET_IF_POINTOPOINT)
+
+      ipv6:
+        schema: zephyr,net-ipv6 # TODO: #79751 will ensure that no explicit
+                                # sub-schemas will be required any more unless
+                                # an independent entity model is actually to be
+                                # introduced for the node.
+        enabled: true # Just for demonstration, this is the default.
+
+        addrs: ["2001:db8:110::1"]
+        hop-limit: 64
+
+        mcast-addrs: ["ff05::114", "ff15::115"]
+        mcast-hop-limit: 1
+
+        prefixes:
+          schema: zephyr,net-ipv6-prefixes
+          global:
+            - addr: "2001:db8::"
+              len: 64
+              lifetime: 1024
+
+        dhcp-client:
+          schema: zephyr,net-ipv6-dhcp-client
+          req-addr: true
+          req-prefix: false
+
+      ipv4:
+        schema : zephyr,net-ipv4
+        enabled: false # Properties in this node will be ignored.
+
+        addrs: [192.0.2.10/24]
+        mcast-addrs: [234.0.0.10]
+        gateway: 192.0.2.1
+        ttl: 64
+        mcast-ttl: 1
+        autoconf: false
+
+        dhcp-client: # Using a node for forward compatibility.
+          schema: zephyr,net-ipv4-dhcp-client
+
+        dhcp-server: # Using a node for forward compatibility.
+          schema: zephyr,net-ipv4-dhcp-server
+          base-addr: 192.168.1.100
+
+      vlan:
+        # TODO: requires "zephyr,net-iface-virtual" schema above
+        schema: zephyr,net-vlan
+
+        tag: 100
+
+      sntp-server: sntp-google
+
+- sntp-servers:
+    sntp-google:
+      server-name: time.google.com
+      timeout: 30

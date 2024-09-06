@@ -1,0 +1,3 @@
+&ieee802154 {
+	compatible = "zephyr,ieee802154-uart-pipe";
+};

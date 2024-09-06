@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  VLAN configuration.
+
+  All nodes using this binding SHALL be called "vlan" and SHALL be placed inside
+  the corresponding "iface" node.
+
+schema: "zephyr,net-vlan"
+
+properties:
+  tag:
+    type: int
+    description: VLAN tag, e.g. "100".
+    required: true
+
+  iface-name:
+    type: string
+    description: Sets a non-default interface name for the VLAN.

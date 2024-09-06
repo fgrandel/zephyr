@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  The SNTP library is part of the network subsystem. SNTP servers can be
+  configured and shared across interfaces using this binding. To use an SNTP
+  server in your network configuration, refer to it with a phandle.
+
+  Nodes using this binding SHALL be called "sntp-servers".
+
+schema: "zephyr,net-lib-sntp-servers"
+
+child-binding:
+  description: |
+    SNTP server configuration.
+
+    SNTP server configuration nodes SHALL be given unique names ("labels") along
+    the pattern "sntp-[a-z0-9-]+" that can be referenced by interface
+    configurations "by label". The address part of the node is used to identify
+    the SNTP server instance and does not have other meaning.
+
+  properties:
+    server-name:
+      type: string
+      required: true
+      description: The NTP clock source, e.g. "time.google.com".
+
+    timeout:
+      type: int
+      description: The NTP server timeout in seconds.
+      default: 30

@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024 The Zephyr Project
+
+#include "subsys/net.config.yaml"
+
+# The global structure of the configuration YAML file is a list of configuration
+# snippets that will be merged into a single configuration tree. The key of each
+# snippet is either the absolute path to the configuration node it should be
+# merged into, or a unique node label (i.e. configuration leaf key).
+
+- /:
+    # The root-level configuration node. This node will be mounted under the
+    # top-level "/config" node in the joint settings tree.
+
+    schema: zephyr,config
+
+    # The top-level namespace under which each driver subsystem will be allocated
+    # a single, dedicated namespace (key):
+    drivers: {}
+
+    # The top-level namespace under which each application-facing "upper"
+    # subsystem (other than driver subsystems) will be allocated a single,
+    # dedicated namespace (key):
+    subsys:
+      <<: *subsys_net
+
+    # The top-level namespace under which the user application can place arbitrary
+    # configuration settings (empty by default).
+    app: {}
+
+# Note: YAML anchors like "&drivers" and corresponding aliases like "*drivers"
+# are a serialization detail (see YAML 1.2, rev. 1.2.2, section 3.2.2.2) and
+# will be discarded in the representation generated from it. This means that
+# neither Zephyr's build system nor the running application will "know" where
+# anchors and aliases had been present in the source file.
+#
+# This means that anchors and aliases can be used in source files to define
+# references between nodes (e.g. to extend a previously defined node in another
+# file), but they cannot be used to, e.g. reference an SNTP configuration inside
+# the network configuration such that the application can access this reference
+# as a "link" or "pointer" at build or runtime.
+#
+# Binding files may therefore define arbitrarily named "pointer" or
+# "pointer-array" typed properties within a schema that will be materialized as
+# actual C-pointers between separate configuration structures at build or
+# runtime. Values of pointers can either be the full or relative path name to the
+# referenced configuration node, e.g.
+#
+#     sntp-server: /config/subsys/net/lib/sntp-servers/sntp-google
+# or
+#     sntp-server: ../../lib/sntp-servers/sntp-google
+#
+# or alternatively only name the "leaf label" of a configuration property, e.g.
+#
+#     sntp-server: sntp-google
+#
+# The latter requires the leaf name to be unique across the whole settings tree.
+# If that is the case, the leaf name will also be called a "node label". If
+# multiple nodes with the same label exist and such a label is used in a
+# pointer, the configuration system will raise an error.
+#
+# Pointers to nodes inside the devicetree follow the same syntax as phandles
+# or phandles properties with the following exceptions:
+#
+# A path phandle (e.g. &{/some/path} is specified as a pointer-type property
+# without the ampersand and surrounding braces, i.e. "some-pointer-property:
+# /some/path". A label phandle (e.g. &my_label) is specified as a pointer-type
+# property without the ampersand, i.e. "some-pointer-property: my_label".
+#
+# Properties representing phandle-arrays are not supported in the configuration.

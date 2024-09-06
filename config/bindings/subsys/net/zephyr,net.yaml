@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024 The Zephyr Project
+
+description: A list with all network interface configurations.
+
+schema: "zephyr,net"
+
+properties:
+  # Match all children but the "lib" subnode.
+  #
+  # Regular expressions replace the child-binding mechanism which will be
+  # deprecated. To achieve the same effect as with child-bindings, we can use
+  # ".*" to match all children.
+  "^(?!lib$)":
+    type: node
+
+    description: |
+      A network interface configuration.
+
+      Nodes using this binding SHALL be called like the final interface name once
+      the configuration has been applied (e.g. "eth0", "wpan0", ...).
+
+      TODO: Introduce named child bindings that allow us to enforce specific
+      naming rules.
+
+    properties:
+
+      device:
+        type: pointer
+        required: true
+        description:
+          Reference to the devicetree node to which the interface driver is bound.
+
+      is-default:
+        type: boolean
+        default: false
+        required: true
+        description: |
+          If set, this interface will be the default interface. If several
+          interfaces have this property set to true, then one of these will be
+          used as default interface.
+
+      set-flags:
+        type: uint32
+        description: |
+          A bitmask of network interface flags that shall be added to this
+          interface. See the ``net_if_flag`` documentation for details of the
+          flags.
+
+          The following flags can be set or cleared:
+          ``NET_IF_POINTOPOINT``, ``NET_IF_PROMISC``, ``NET_IF_NO_AUTO_START``,
+          ``NET_IF_FORWARD_MULTICASTS``, ``NET_IF_IPV6_NO_ND``,
+          ``NET_IF_IPV6_NO_MLD``
+
+          Your configuration needs to include
+          <zephyr/dt-bindings/subsys/net/if_flags.h> if you use this property.
+        default: 0
+
+      clear-flags:
+        type: uint32
+        description: |
+          A bitmask of network interface flags that shall be removed from this
+          interface. See the ``net_if_flag`` documentation for details of the
+          flags.  See the set-flags property description for flags that can be
+          cleared.
+        default: 0
+
+      sntp-server:
+        type: pointer
+        description: |
+          Reference (by path or label) to an SNTP server configuration

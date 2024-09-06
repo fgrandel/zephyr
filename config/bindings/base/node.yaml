@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024 The Zephyr Project
+
+description: |
+  Common fields for all configuration nodes.
+
+  This source MAY be included in a schema definition but this is not mandatory
+  as the properties documented in this file can be used w/o having to define
+  them explicitly for each node. The file exists mostly to specify the meaning
+  of these default properties.
+
+properties:
+  schema:
+    type: string-array
+    required: true
+    description: |
+      The schema property value consists of one or more strings that define
+      (part of) the configuration model of a subsystem. This list of strings
+      will be used to find schema (aka binding) files in the bindings
+      directories which will the be used to validate the configuration and
+      enrich it with additional meta-data (e.g. corresponding C type information
+      and documentation) required to generate the configuration targets (e.g.
+      macros or pre-generated binary flash images for provisioning).
+
+      The list of strings defines all schemas that apply to a configuration
+      node. If several schemas are given then they'll be "composed", i.e.
+      configuration nodes will be validated against the union of all given
+      schemas. This works similarly to the "allOf" operator in JSON-schema with
+      the "unevaluatedProperties" switch set to "false". Ie. all properties that
+      are specified in any of the schemas will match, in case a property is
+      defined in several schemas, the definition in schemas at the beginning of
+      the list takes precedence over schemas to the end of the list. This allows
+      composition and "mixin" of schemas, e.g. to support additional or custom
+      features of a network interface or to compose different protocol stacks
+      (e.g. the IEEE 802.15.4 base configuration with configuration specific to
+      the native L2 vs. OpenThread stack).
+
+      While composition of schemas is flexible and often the correct solution,
+      sometimes inheritance of schemas is more appropriate, e.g. to define some
+      common base properties shared across several interface types from which
+      other schemas can inherit to describe specific interface types. The same
+      rules as in object oriented programming apply to choose between the two
+      alternatives.
+
+      The recommended format for configuration schema identifiers is
+      "<manufacturer>,<schema/type>", where manufacturer is a string describing
+      the name of the manufacturer in vendors.txt (such as a stock ticker
+      symbol), and the schema describes the vendor-defined configuration data
+      model. The schema string SHALL consist only of lowercase letters, digits
+      and dashes, and SHALL start with a letter. A single comma MAY only be used
+      following a vendor prefix. Underscores SHALL not be used.
+
+      Example:
+        `schema = "zephyr,net-iface", "zephyr,ieee802154-l2-native";`
+
+      In this example, Zephyr would compose the base interface model with
+      specific properties required to configure the native IEEE 802.15.4 layer 2
+      configuration. The latter may inherit from the generic
+      "zephyr,ieee802154-l2" that would be common to all IEEE 802.15.4 stacks,
+      e.g. to OpenThread and native L2.
+
+      If a binding file cannot be found for one of the given schemas, it will be
+      ignored. Properties in a configuration file that do not match one of the
+      given schemas will also be ignored.
+
+  enabled:
+    type: boolean
+    description: |
+      A value of "false" indicates that the configuration (including all
+      subnodes) SHALL be disregarded as if it was not part of the tree. A
+      value of "true" indicates that the configuration SHALL be used.
+
+      If no enabled property is explicitly given, then the node will be treated
+      as if the property existed with a value of "true".

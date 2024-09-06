@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024 The Zephyr Project
+
+#include "net/lib.config.yaml"
+
+# top-level keys starting with "x-" will be ignored by the configuration system.
+# The x- prefix is reserved to define re-usable snippets of YAML code.
+- x-subsys-net: &subsys_net
+    net:
+      schema: zephyr,net
+      <<: *subsys_net_lib

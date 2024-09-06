@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Generic IEEE 802.15.4 MAC configuration shared by all IEEE 802.15.4 L2
+  implementations.
+
+  Note: Please do not add PHY-specific properties to this schema.
+
+  Currently we do not support IEEE 802.15.4 PHY-specific configuration. Once
+  drivers appear that require PHY-specific configuration, we will add
+  corresponding subnode bindings for each supported channel page.
+
+  This schema is meant to be mixed into the corresponding interface
+  configuration.
+
+  Configuration contained in "ieee802154[g]" DT nodes placed directly below a
+  radio peripheral will continue to be supported but are deprecated.
+  IEEE 802.15.4 interface drivers will consider both locations and merge the
+  result.
+
+  If multiple interface drivers exists for a given radio peripheral then the
+  proper driver (e.g. SubG vs. 2.4G) SHALL be specified by corresponding Kconfig
+  options as is the case for other driver subsystems. And also as with other
+  drivers: At most one driver within a build SHALL match the radio peripheral's
+  compatible at any time.
+
+  References are to the IEEE 802.15.4-2020 standard by default.
+
+schema: "zephyr,net-l2-ieee802154"
+
+properties:
+  pan-id:
+    description: The IEEE 802.15.4 PAN ID, e.g. 0xabcd (CPU encoding).
+    type: uint16
+    required: true
+
+  ext-addr:
+    description: |
+      The IEEE 802.15.4 extended address (big endian),
+      e.g. "c2 a3 9e 00 00 4b 12 00". Whitespace may be added for better
+      readability but will be ignored.
+    type: uint8-array
+    required: true
+
+  default-channel-page:
+    description: |
+      The IEEE 802.15.4 default channel page (see phyCurrentPage, section 11.3,
+      table 11-2), e.g. 0. Allowable values depend on the channel pages
+      supported by the selected driver.
+
+      Note that the channel attribute is PHY independent although it belongs to
+      the PHY layer. That's why it is specified here.
+    type: uint16
+    default: 0
+
+  default-channel:
+    description: |
+      The IEEE 802.15.4 default channel (see phyCurrentChannel, section 11.3,
+      table 11-2), e.g. 26. Allowable values depend on the channel page
+      supported by the selected driver.
+
+      For the deprecated legacy channel page zero (which is what most Zephyr
+      drivers currently support), channels 0-10 are in the Sub-GHz band and
+      channels 11-26 are in the 2.4 GHz band.
+
+      Note that the channel attribute is PHY independent although it belongs to
+      the PHY layer. That's why it is specified here.
+    type: uint16
+    default: 11
+
+  default-tx-pwr:
+    # Should probably be moved to the radio peripheral level as it has nothing
+    # to do with IEEE 802.15.4.
+    description: |
+      The default TX power in dB, e.g. -5, 0 or 3. Allowable values are driver
+      specific.
+
+      Note that TX power is not specified in the standard but is an attribute
+      commonly used by Zephyr drivers That's why it is specified here.
+    type: int16
+    default: 0
