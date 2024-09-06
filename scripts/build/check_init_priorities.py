@@ -250,10 +250,11 @@ class Validator():
         dev_node = self._ord2node[dev_ord]
         dep_node = self._ord2node[dep_ord]
 
-        if dev_node._binding:
-            dev_compat = dev_node._binding.compatible
-            if dev_compat in _IGNORE_COMPATIBLES:
-                self.log.info(f"Ignoring priority: {dev_node._binding.compatible}")
+        if dev_node.matching_compats:
+            self.log.info(f"matching compats: {dev_node.matching_compats}")
+            ignored_compats = set(dev_node.matching_compats) & _IGNORE_COMPATIBLES
+            if ignored_compats:
+                self.log.info(f"Ignoring priority: {ignored_compats}")
                 return
 
         dev_prio, dev_init = self._obj.devices.get(dev_ord, (None, None))
