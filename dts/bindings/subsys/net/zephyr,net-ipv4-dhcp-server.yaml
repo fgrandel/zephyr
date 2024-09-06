@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  IPv4 DHCP server configuration.
+
+  All nodes using this binding SHALL be called "dhcp-server" and SHALL be placed
+  inside the corresponding "ipv4" node.
+
+compatible: "zephyr,net-ipv4-dhcp-server"
+
+include: node.yaml
+
+properties:
+  base-addr:
+    type: string
+    description: |
+      Start address of the DHCP server pool optionally including
+      subnet mask bits, e.g. "192.168.1.100/24".
+    required: true

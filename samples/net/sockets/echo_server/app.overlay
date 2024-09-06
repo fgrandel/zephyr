@@ -1,0 +1,150 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/*
+ * Sample network subsystem configuration.
+ *
+ * TODO: Convert to YAML.
+ */
+
+#include <subsys/net/lib/sntp.dtsi>
+#include <zephyr/dt-bindings/subsys/net/if_flags.h>
+
+&sntp_servers {
+	sntp_google: sntp-server@0 {
+		reg = <0>;
+		server-name = "time.google.com";
+		timeout = <30>;
+	};
+};
+
+&ieee802154 {
+	/* I propose that for bindings (not driver selection), compatibles
+	 * can be composed. Our current approach only allows for
+	 * inheritance. IMO this is not good design practice. We should use
+	 * composition instead where applicable.
+	 *
+	 * If the selected driver does not support one of the properties
+	 * it will be ignored (same as today).
+	 *
+	 * This example shows that both, inheritance and composition, have
+	 * legitimate applications:
+	 *  - We compose driver configuration properties (potentially even
+	 *    vendor specific) with generic IEEE 802.15.4 L2 properties.
+	 *  - We let the native IEEE 802.15.4 L2 schema inherit from a
+	 *    generic IEEE 802.15.4 L2 schema which will be shared by all
+	 *    IEEE 802.15.4 L2 stacks.
+	 *
+	 * We could (optionally) introduce an additive syntax for DT
+	 * <stringlist> properties, e.g.: compatible = "... {} ..."; for
+	 * improved encapsulation where {} will be replaced with the list
+	 * defined further up in the overlay hierarchy. But IMO it's fine if
+	 * applications live with this slight redundancy as it won't matter
+	 * much in practice.
+	 *
+	 * Note: zephyr,net-l2-ieee802154-native inherits from
+	 * zephyr,net-l2-ieee802154
+	 */
+	compatible = "zephyr,ieee802154-uart-pipe", "zephyr,net-l2-ieee802154-native";
+
+	pan-id = <0xabcd>; /* CPU encoding */
+	ext-addr = [c2 a3 9e 00 00 4b 12 00]; /* big endian */
+	default-channel = <26>;
+	/* Uncomment for 868 MHz: default-channel = <0>; */
+	/* Uncomment for 906 MHz: default-channel = <1>; */
+	default-tx-pwr = <1>;
+	/* security key: 16 bytes (deprecated) */
+	sec-key = [c0 c1 c2 c3 c4 c5 c6 c7 c8 c9 ca cb cc cd ce cf];
+	sec-key-mode = <0>;
+	sec-level = <1>;
+	no-ack;
+
+	/* Binds to a network peripheral which again determines
+	 * a driver instance. When a peripheral (and its driver
+	 * instance) exposes several interfaces, then we'll have
+	 * to specify a <prop-encoded-array> which will determine
+	 * the specific interface instance to bind to, e.g. in case
+	 * a WiFi device exposes both, station and access point,
+	 * interfaces we could refer to them by iface@0 and iface@1
+	 * respectively or any other addressing scheme that makes
+	 * sense for the given peripheral and conforms to the DT
+	 * spec.
+	 */
+	iface {
+		compatible = "zephyr,net-iface";
+
+		/* TODO: For virtual interfaces (vlan, bridge, tunnel, etc.):
+		 * compatible = "zephyr,net-iface", "zephyr,net-iface-virtual";
+		 * identify-by-iface-name = "";
+		 * identify-by-device-name = "";
+		 * bind-to = <&physical_interface>; or
+		 * alternatively placed inside the physical iface node.
+		 */
+
+		set-iface-name = "eth0";
+		is-default;
+		clear-flags = <(NET_IF_NO_AUTO_START|NET_IF_POINTOPOINT)>;
+
+		ipv6 {
+			compatible = "zephyr,net-ipv6";
+			status = "okay"; /* Just for demonstration, this is the default. */
+
+			addrs = "2001:db8:110::1";
+			hop-limit = <64>;
+
+			mcast-addrs = "ff05::114", "ff15::115";
+			mcast-hop-limit = <1>;
+
+			prefixes {
+				compatible = "zephyr,net-ipv6-prefixes";
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				prefix@0 {
+					reg = <0>;
+					addr = "2001:db8::";
+					len = <64>;
+					lifetime = <1024>;
+				};
+			};
+
+			dhcp-client {
+				compatible = "zephyr,net-ipv6-dhcp-client";
+				req-addr;
+				/* req-prefix - disabled */
+			};
+		};
+
+		ipv4 {
+			compatible = "zephyr,net-ipv4";
+			status = "disabled"; /* Properties in this node will be ignored and
+					      * do not consume resources on the target.
+					      */
+
+			addrs = "192.0.2.10/24";
+			mcast-addrs = "234.0.0.10";
+			gateway = "192.0.2.1";
+			ttl = <64>;
+			mcast-ttl = <1>;
+			/* autoconf - disabled */
+
+			dhcp-client { /* currently no props, still a node for forward compat */
+				compatible = "zephyr,net-ipv4-dhcp-client";
+				status = "okay";
+			};
+
+			dhcp-server { /* currently no props, still a node for forward compat */
+				compatible = "zephyr,net-ipv4-dhcp-server";
+				base-addr = "192.168.1.100";
+			};
+		};
+
+		vlan {
+			/* TODO: requires "zephyr,net-iface-virtual compat above" */
+			compatible = "zephyr,net-vlan";
+
+			tag = <100>;
+		};
+
+		sntp-server = < &sntp_google >;
+	};
+};

@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  IPv4 DHCP client configuration.
+
+  All nodes using this binding SHALL be called "dhcp-client" and SHALL be placed
+  inside the corresponding "ipv4" node.
+
+compatible: "zephyr,net-ipv4-dhcp-client"
+
+include: node.yaml

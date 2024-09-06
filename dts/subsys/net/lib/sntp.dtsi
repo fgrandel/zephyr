@@ -1,0 +1,9 @@
+#include "../lib.dtsi"
+
+&subsys_net_lib {
+	sntp_servers: sntp-servers {
+		compatible = "zephyr,net-lib-sntp-servers";
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+};

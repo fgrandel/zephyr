@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: Apache-2.0
+
+include: node.yaml
+
+description: |
+  Network interface configuration.
+
+  All nodes using this binding SHOULD be called "iface" or "iface@<u32>". At
+  build time, devicetree nodes representing a network device MAY have exactly as
+  many "iface[@<u32>]" child nodes with "status = 'okay'" as the corresponding
+  device node instantiates network interfaces. In most cases this will be a
+  single network interface per device node in which case the address part of the
+  "iface" node is optional.
+
+  If a single devicetree node instantiates more than one network interface, then
+  the "iface" nodes SHOULD be named "iface@0", "iface@1", etc.
+
+  Note: The interface node's address part has no semantic meaning other than
+  uniquely identifying instances of interface nodes. Notably the address part
+  does not correspond to the interface index.
+
+compatible: "zephyr,net-iface"
+
+properties:
+  set-iface-name:
+    type: string
+    description: Sets a non-default interface name. If not set, the interface
+      name will be the interface's device name.
+
+  is-default:
+    type: boolean
+    description: If set, this interface will be the default interface.
+
+  set-flags:
+    type: int
+    description: |
+      A bitmask of network interface flags that shall be added to this
+      interface. See the ``net_if_flag`` documentation for details of the flags.
+
+      The following flags can be set or cleared:
+      ``NET_IF_POINTOPOINT``, ``NET_IF_PROMISC``, ``NET_IF_NO_AUTO_START``,
+      ``NET_IF_FORWARD_MULTICASTS``, ``NET_IF_IPV6_NO_ND``,
+      ``NET_IF_IPV6_NO_MLD``
+
+      Your configuration needs to include
+      <zephyr/dt-bindings/subsys/net/if_flags.h> if you use this property.
+    default: 0
+
+  clear-flags:
+    type: int
+    description: |
+      A bitmask of network interface flags that shall be removed from this
+      interface. See the ``net_if_flag`` documentation for details of the flags.
+      See the set-flags property description for flags that can be cleared.
+    default: 0
+
+  sntp-server:
+    type: phandle
+    description: |
+      Reference to an SNTP server configuration
