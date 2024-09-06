@@ -973,9 +973,9 @@ class Node:
       this case None is returned.
 
     description:
-      The description string from the binding for the node, or None if the node
-      has no binding. Leading and trailing whitespace (including newlines) is
-      removed.
+      The description string from the most specific binding for the node, or
+      None if the node has no binding. Leading and trailing whitespace
+      (including newlines) is removed.
 
     path:
       The devicetree path of the node
@@ -1021,13 +1021,13 @@ class Node:
     read_only:
       True if the node has a 'read-only' property, and False otherwise
 
-    matching_compat:
-      The 'compatible' string for the binding that matched the node, or None if
-      the node has no binding
+    matching_compats:
+      A list of 'compatible' strings for the bindings that matched the node, or
+      None if the node has no binding
 
-    binding_path:
-      The path to the binding file for the node, or None if the node has no
-      binding
+    binding_paths:
+      A list of paths to the binding files for the node, or None if the node has
+      no binding
 
     compats:
       A list of 'compatible' strings for the node, in the same order that
@@ -1058,10 +1058,10 @@ class Node:
       pinctrl-<index> properties.
 
     buses:
-      If the node is a bus node (has a 'bus:' key in its binding), then this
-      attribute holds the list of supported bus types, e.g. ["i2c"], ["spi"]
-      or ["i3c", "i2c"] if multiple protocols are supported via the same bus.
-      If the node is not a bus node, then this attribute is an empty list.
+      If the node is a bus node (has a 'bus:' key in one of its binding), then
+      this attribute holds the list of supported bus types, e.g. ["i2c"],
+      ["spi"] or ["i3c", "i2c"] if multiple protocols are supported via the same
+      bus. If the node is not a bus node, then this attribute is an empty list.
 
     on_buses:
       The bus the node appears on, e.g. ["i2c"], ["spi"] or ["i3c", "i2c"] if
@@ -1110,13 +1110,15 @@ class Node:
 
         # Private, don't touch outside the class:
         self._node: dtlib_Node = dt_node
-        self._binding: Optional[Binding] = None
+        self._bindings: List[Binding] = []  # ordered most to least specific
+        self._prop2specs: Dict[str, PropertySpec] = {}
+        self._specifier2cells: Dict[str, List[str]] = {}
 
         # Public, some of which are initialized properly later:
         self.edt: 'EDT' = edt
         self.dep_ordinal: int = -1
-        self.matching_compat: Optional[str] = None
-        self.binding_path: Optional[str] = None
+        self.matching_compats: List[str] = []
+        self.binding_paths: List[str | None] = []
         self.compats: List[str] = compats
         self.ranges: List[Range] = []
         self.regs: List[Register] = []
@@ -1125,7 +1127,7 @@ class Node:
         self.pinctrls: List[PinCtrl] = []
         self.bus_node = self._bus_node(support_fixed_partitions_on_any_bus)
 
-        self._init_binding()
+        self._init_bindings()
         self._init_regs()
         self._init_ranges()
 
@@ -1154,9 +1156,7 @@ class Node:
     @property
     def description(self) -> Optional[str]:
         "See the class docstring."
-        if self._binding:
-            return self._binding.description
-        return None
+        return self._bindings[0].description if self._bindings else None
 
     @property
     def path(self) ->  str:
@@ -1244,9 +1244,10 @@ class Node:
     @property
     def buses(self) -> List[str]:
         "See the class docstring"
-        if self._binding:
-            return self._binding.buses
-        return []
+        buses = set()
+        for binding in self._bindings:
+            buses.update(binding.buses)
+        return list(buses)
 
     @property
     def on_buses(self) -> List[str]:
@@ -1269,7 +1270,7 @@ class Node:
             _err(f"flash partition {self!r} lacks parent or grandparent node")
 
         controller = self.parent.parent
-        if controller.matching_compat == "soc-nv-flash":
+        if "soc-nv-flash" in controller.matching_compats:
             if controller.parent is None:
                 _err(f"flash controller '{controller.path}' cannot be the root node")
             return controller.parent
@@ -1336,7 +1337,7 @@ class Node:
     @property
     def has_child_binding(self) -> bool:
         "True if the node can have child nodes, False otherwise"
-        return bool(self._binding and self._binding.child_binding)
+        return any(binding.child_binding for binding in self._bindings)
 
     @property
     def is_pci_device(self) -> bool:
@@ -1344,15 +1345,15 @@ class Node:
         return 'pcie' in self.on_buses
 
     def __repr__(self) -> str:
-        if self.binding_path:
-            binding = "binding " + self.binding_path
+        if self.binding_paths:
+            binding = "binding " + self.binding_paths[0]
         else:
             binding = "no binding"
-        return f"<Node {self.path} in '{self.edt.dts_path}', {binding}>"
+        return f"<ENode {self.path} in '{self.edt.dts_path}', {binding}>"
 
-    def _init_binding(self) -> None:
-        # Initializes Node.matching_compat, Node._binding, and
-        # Node.binding_path.
+    def _init_bindings(self) -> None:
+        # Initializes Node.matching_compats, Node._binding, and
+        # Node.binding_paths.
         #
         # Node._binding holds the data from the node's binding file, in the
         # format returned by PyYAML (plain Python lists, dicts, etc.), or None
@@ -1388,25 +1389,28 @@ class Node:
                     else:
                         continue
 
-                self.binding_path = binding.path
-                self.matching_compat = compat
-                self._binding = binding
-                return
+                self._bindings.append(binding)
+                self.binding_paths.append(binding.path)
+                self.matching_compats.append(compat)
+
         else:
             # No 'compatible' property. See if the parent binding has
             # a compatible. This can come from one or more levels of
             # nesting with 'child-binding:'.
 
-            binding_from_parent = self._binding_from_parent()
-            if binding_from_parent:
-                self._binding = binding_from_parent
-                self.binding_path = self._binding.path
-                self.matching_compat = self._binding.compatible
+            bindings_from_parent = self._bindings_from_parent()
+            if bindings_from_parent:
+                assert not self._bindings
+                self._bindings = bindings_from_parent
+                self.binding_paths = [binding.path for binding in bindings_from_parent]
+                self.matching_compats = [
+                    binding.compatible for binding in bindings_from_parent
+                ]
 
-                return
-
-        # No binding found
-        self._binding = self.binding_path = self.matching_compat = None
+        # More specific bindings override less specific ones.
+        for binding in reversed(self._bindings):
+            self._prop2specs.update(binding.prop2specs)
+            self._specifier2cells.update(binding.specifier2cells)
 
     def _binding_from_properties(self) -> None:
         # Sets up a Binding object synthesized from the properties in the node.
@@ -1447,26 +1451,22 @@ class Node:
             raw['properties'][name] = pp
 
         # Set up Node state.
-        self.binding_path = None
-        self.matching_compat = None
         self.compats = []
-        self._binding = Binding(None, {}, raw=raw, require_compatible=False)
+        assert not self._bindings
+        self._bindings = [Binding(None, {}, raw=raw, require_compatible=False)]
 
-    def _binding_from_parent(self) -> Optional[Binding]:
+    def _bindings_from_parent(self) -> List[Binding]:
         # Returns the binding from 'child-binding:' in the parent node's
         # binding.
 
-        if not self.parent:
-            return None
+        if not self.parent or not self.parent._bindings:
+            return []
 
-        pbinding = self.parent._binding
-        if not pbinding:
-            return None
-
-        if pbinding.child_binding:
-            return pbinding.child_binding
-
-        return None
+        return [
+            parent_bindings.child_binding
+            for parent_bindings in self.parent._bindings
+            if parent_bindings.child_binding
+        ]
 
     def _bus_node(self, support_fixed_partitions_on_any_bus: bool = True
                   ) -> Optional['Node']:
@@ -1509,16 +1509,9 @@ class Node:
         # Creates self.props. See the class docstring. Also checks that all
         # properties on the node are declared in its binding.
 
-        self.props = {}
-
-        if self._binding:
-            prop2specs = self._binding.prop2specs
-        else:
-            prop2specs = None
-
         # Initialize self.props
-        if prop2specs:
-            for prop_spec in prop2specs.values():
+        if self._prop2specs:
+            for prop_spec in self._prop2specs.values():
                 self._init_prop(prop_spec, err_on_deprecated)
             self._check_undeclared_props()
         elif default_prop_types:
@@ -1536,8 +1529,9 @@ class Node:
 
         name = prop_spec.name
         prop_type = prop_spec.type
+        binding_path = prop_spec.binding.path
         if not prop_type:
-            _err(f"'{name}' in {self.binding_path} lacks 'type'")
+            _err(f"'{name}' in {binding_path} lacks 'type'")
 
         val = self._prop_val(name, prop_spec, err_on_deprecated)
 
@@ -1548,16 +1542,20 @@ class Node:
 
         enum = prop_spec.enum
         if enum and val not in enum:
-            _err(f"value of property '{name}' on {self.path} in "
-                 f"{self.edt.dts_path} ({val!r}) is not in 'enum' list in "
-                 f"{self.binding_path} ({enum!r})")
+            _err(
+                f"value of property '{name}' on {self.path} in "
+                f"{self.edt.dts_path} ({val!r}) is not in 'enum' list in "
+                f"{binding_path} ({enum!r})"
+            )
 
         const = prop_spec.const
         if const is not None and val != const:
-            _err(f"value of property '{name}' on {self.path} in "
-                 f"{self.edt.dts_path} ({val!r}) "
-                 "is different from the 'const' value specified in "
-                 f"{self.binding_path} ({const!r})")
+            _err(
+                f"value of property '{name}' on {self.path} in "
+                f"{self.edt.dts_path} ({val!r}) "
+                "is different from the 'const' value specified in "
+                f"{binding_path} ({const!r})"
+            )
 
         # Skip properties that start with '#', like '#size-cells', and mapping
         # properties like 'gpio-map'/'interrupt-map'
@@ -1685,13 +1683,13 @@ class Node:
                    "interrupt-parent", "interrupts-extended", "device_type"}:
                 continue
 
-            if TYPE_CHECKING:
-                assert self._binding
-
-            if prop_name not in self._binding.prop2specs:
-                _err(f"'{prop_name}' appears in {self._node.path} in "
-                     f"{self.edt.dts_path}, but is not declared in "
-                     f"'properties:' in {self.binding_path}")
+            if prop_name not in self._prop2specs:
+                assert self.binding_paths
+                _err(
+                    f"'{prop_name}' appears in {self._node.path} in "
+                    f"{self.edt.dts_path}, but is not declared in "
+                    f"'properties:' in {self.binding_paths if len(self.binding_paths) > 1 else self.binding_paths[0]}"
+                )
 
     def _init_ranges(self) -> None:
         # Initializes self.ranges
@@ -1923,12 +1921,12 @@ class Node:
         # binding for 'controller' to cell values. 'data' is the raw data, as a
         # byte array.
 
-        if not controller._binding:
+        if not controller._bindings:
             _err(f"{basename} controller {controller._node!r} "
                  f"for {self._node!r} lacks binding")
 
-        if basename in controller._binding.specifier2cells:
-            cell_names: List[str] = controller._binding.specifier2cells[basename]
+        if basename in controller._specifier2cells:
+            cell_names: List[str] = controller._specifier2cells[basename]
         else:
             # Treat no *-cells in the binding the same as an empty *-cells, so
             # that bindings don't have to have e.g. an empty 'clock-cells:' for

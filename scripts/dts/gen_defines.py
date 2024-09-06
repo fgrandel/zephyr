@@ -185,15 +185,15 @@ Devicetree node: {node.path}
 Node identifier: DT_{node.z_path_id}
 """
 
-    if node.matching_compat:
-        if node.binding_path:
+    for specificity, compat in enumerate(node.matching_compats):
+        if node.binding_paths[specificity]:
             s += f"""
-Binding (compatible = {node.matching_compat}):
-  {relativize(node.binding_path)}
+Binding (compatible = {compat}):
+  {relativize(node.binding_paths[specificity])}
 """
         else:
             s += f"""
-Binding (compatible = {node.matching_compat}):
+Binding (compatible = {compat}):
   No yaml (bindings inferred from properties)
 """
 
