@@ -1,35 +1,81 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2024 The Zephyr Project
 
-description: A list with all network interface configurations.
+description: Zephyr network subsystem configuration schema.
 
+# "Compatible" is still supported for backwards compatibility, but only in
+# devicetree bindings. I propose that we use "schema" everywhere in the future
+# and deprecate "compatible". This has always been a misnomer, because while it
+# is fine for a DT node to be compatible with a schema, the schema itself is not
+# compatible with anything per se.
 schema: "zephyr,net"
 
 properties:
-  # Match all children but the "lib" subnode.
+  # Regular expressions replace the child-binding mechanism which IMO should be
+  # deprecated as it has always been awkward to get right and introduces
+  # unnecessary complexity and redundancy both to end users and the binding
+  # engine implementation. To achieve the same effect as with child-bindings,
+  # one can use ".*" as a node-property name to match all children.
   #
-  # Regular expressions replace the child-binding mechanism which will be
-  # deprecated. To achieve the same effect as with child-bindings, we can use
-  # ".*" to match all children.
+  # To minimize the amount of code required to support the legacy syntax,
+  # backwards-compatibility is maintained internally by transforming the
+  # child-binding node to a regular-expression node on-the-fly before processing
+  # the schema.
+  #
+  # Regular expressions can be used for both, scalar and node properties. It
+  # allows us to apply different validation rules to individual children within
+  # the same schema.
+  #
+  # Note: Fixed child node and property names are just a special case of the
+  # generic regex approach. A small optimization has been introduced for fixed
+  # names, so that rather few regex expressions have to be evaluated in
+  # practice.
+  #
+  # As a side effect, our binding engine should now be able to handle existing
+  # DT files from Linux verbatim if the schema is the same: "compatible"
+  # properties will no longer be required on sub-nodes of a schema unless this
+  # makes sense from a modeling perspective.
+  #
+  # The new mechanism has been tested to support includes and allow/block list
+  # restrictions exactly as the child-binding mechanism did. To achieve this,
+  # regular expressions are removed or mangled as required by the include filter
+  # before the binding is instantiated. It was therefore possible to migrate all
+  # existing test cases unchanged to the new mechanism.
+  #
+  # Together with the new type compositioning feature, we now have a powerful,
+  # extensible and well-integrated static type checker for devicetree and
+  # configuration files. Missing features can be added at any time if required
+  # which enables us to tailor this important user-facing mechanism exactly to
+  # our needs.
+  #
+  # As an example the following child node expression matches all children
+  # except for the reserved "lib" subnode.
   "^(?!lib$)":
     type: node
-
     description: |
       A network interface configuration.
 
-      Nodes using this binding SHALL be called like the final interface name once
-      the configuration has been applied (e.g. "eth0", "wpan0", ...).
+      Nodes using this binding SHALL be called like the final interface name
+      once the configuration has been applied (e.g. "eth0", "wpan0", ...).
 
-      TODO: Introduce named child bindings that allow us to enforce specific
-      naming rules.
+      The network configuration subsystem will automatically update the
+      interface name if it deviates from the default name assigned to the
+      interface on the device pointed to by the device property.
 
     properties:
-
       device:
+        # Pointers in the configuration work the same as phandles in devicetree
+        # except that the leading ampersand is neither required nor supported.
+        # We support both, external pointers to devicetree and internal pointers
+        # to configuration nodes. Due to the integrated settings tree, we're
+        # able to validate and evaluate pointers at build time. Depending on the
+        # configuration target serialization they can either be resolved to an
+        # arbitrary id (e.g. ordinals) or to actual C-pointers.
         type: pointer
         required: true
         description:
-          Reference to the devicetree node to which the interface driver is bound.
+          Devicetree path or label reference to the devicetree node to which the
+          interface driver is bound (e.g. "eth0" or "/soc/radio/ieee802154").
 
       is-default:
         type: boolean
@@ -41,6 +87,18 @@ properties:
           used as default interface.
 
       set-flags:
+        # All primitive C types (including float and double) as well as
+        # [u]int{8|16|32|64} standard types are now supported. Supported types
+        # can be configured in the binding engine on a per-source-format basis.
+        # E.g. supporting these types in devicetree would be as simple as
+        # copying their specifiers from the ConfigTree class to the common base
+        # class. The actual serialization (endianness, encoding, ...) of data
+        # depends on the configuration target and can be implemented
+        # individually for each target. Other than with JSON schema or
+        # pykwalify, the target engine will have the full type information (plus
+        # arbitrary additional metadata) available at runtime. Such flexible
+        # type and transformation support is another reason why it makes sense
+        # to maintain our own validation and binding approach.
         type: uint32
         description: |
           A bitmask of network interface flags that shall be added to this
@@ -65,7 +123,147 @@ properties:
           cleared.
         default: 0
 
+      # Subnodes do not (and must not) have their own schema ("compatible")
+      # assigned. This gives us the flexibility to only attach schemas to nodes
+      # where it really makes sense from a modeling perspective.
+      ipv4:
+        type: node
+        description: IPv4 configuration.
+        properties:
+          addrs:
+            type: string-array
+            description: |
+              One or several statically configured IPv4 addresses optionally including
+              subnet mask bits, e.g. "192.0.2.10/24".
+
+          ttl:
+            type: int
+            description: IPv4 time to live.
+            default: 64
+
+          mcast-addrs:
+            type: string-array
+            description: |
+              List of IPv4 multicast addresses, e.g. "234.0.0.10", "234.0.0.11".
+
+          mcast-ttl:
+            type: int
+            description: IPv4 multicast time to live.
+            default: 1
+
+          mcast-hop-limit:
+            type: int
+            description: IPv4 multicast hop limit.
+            default: 1
+
+          gateway:
+            type: string
+            description: IPv4 gateway address, e.g. "192.0.2.1".
+
+          autoconf:
+            type: boolean
+            description: |
+              Enable IPv4 auto-configuration for this interface, requires
+              CONFIG_NET_IPV4_AUTO.
+
+          dhcp-client:
+            # We specify an empty node property rather than a boolean to allow
+            # for forward-compatible expansion of the configuration in the
+            # future.
+            type: node
+            description: |
+              IPv4 DHCP client configuration.
+
+              The presence of an empty node in the configuration with this name
+              configures the interface as a DHCP client.
+
+          dhcp-server:
+            # We specify a node property rather than a scalar string to allow
+            # for forward-compatible expansion of the configuration in the
+            # future.
+            type: node
+            description: IPv4 DHCP server configuration.
+            properties:
+              base-addr:
+                type: string
+                description: |
+                  Start address of the DHCP server pool optionally including
+                  subnet mask bits, e.g. "192.168.1.100/24".
+                required: true
+
+      ipv6:
+        type: node
+        description: IPv6 configuration.
+        properties:
+          addrs:
+            type: string-array
+            description: |
+              One or more statically configured IPv6 addresses, e.g. "2001:db8:110::1".
+
+          hop-limit:
+            type: int
+            description: IPv6 hop limit.
+            default: 64
+
+          mcast-addrs:
+            type: string-array
+            description: List of IPv6 multicast addresses, e.g. "ff05::114", "ff15::115".
+
+          mcast-hop-limit:
+            type: int
+            description: IPv6 multicast hop limit.
+            default: 1
+
+          prefixes:
+            type: node
+
+            description: IPv6 prefix configuration.
+
+            properties:
+              "prefix-.*":
+                type: node
+                description: |
+                  Prefix configuration.
+
+                  IPv6 prefix nodes SHALL be named like the subnet, they define.
+
+                properties:
+                  reg:
+                    type: array
+                    required: true
+                    description: prefix identifier
+
+                  addr:
+                    type: string
+                    required: true
+                    description: IPv6 prefix, e.g. "2001:db8::".
+
+                  len:
+                    type: int
+                    default: 64
+                    description: prefix length (in bits)
+
+                  lifetime:
+                    type: int
+                    required: true
+                    description: prefix lifetime in seconds
+
+          dhcp-client:
+            type: node
+
+            description: IPv6 DHCP client configuration.
+
+            properties:
+              req-addr:
+                type: boolean
+                description: Whether to request an address from the DHCP server.
+
+              req-prefix:
+                type: boolean
+                description: Whether to request a prefix from the DHCP server.
+
       sntp-server:
         type: pointer
         description: |
-          Reference (by path or label) to an SNTP server configuration
+          Reference (by path or label) to an SNTP server configuration, see
+          `zephyr/config/bindings/subsys/net/lib/sntp/zephyr,net-lib-sntp-servers.yaml`

@@ -9,13 +9,14 @@
 - /subsys/net:
     wpan0:
       # Schemas can be composed. Our previous binding approach only allowed
-      # matching a single binding per node and otherwise polymorphism of schemas
-      # could only be achieved via inheritance. In general we should prefer
-      # composition over inheritance where applicable.
+      # matching a single binding per node. Otherwise schema polymorphism could
+      # only be achieved via inheritance. In general we should prefer
+      # composition over inheritance in the future where applicable.
       #
-      # Due to composition now being part of the common binding engine of DT and
-      # configuration, we can use it in DT, too. We have several long-standing DT
-      # issues that can be resolved by the compositional approach.
+      # Due to the binding engine being shared between DT and configuration, we
+      # can use composition, regex children, additional C-types, etc. in DT,
+      # too. We have a few long-standing DT issues that can be resolved by the
+      # compositional approach.
       #
       # If the selected subsystem does not support one of the properties in a
       # config file, it will be ignored (e.g. if a newer config file is used with
@@ -30,7 +31,9 @@
       #
       # Note: One reason (but not the only one), why we cannot use YAML tags to
       # specify schemas is that tags cannot be composed.
-      schema: "zephyr,net-l2-ieee802154-native" # inherits from zephyr,net-l2-ieee802154
+      schema:
+        - "zephyr,net-iface"
+        - "zephyr,net-l2-ieee802154-native" # inherits from zephyr,net-l2-ieee802154
 
       # TODO: For virtual interfaces (vlan, bridge, tunnel, etc.):
       # schema: zephyr,net-iface-virtual
@@ -53,10 +56,6 @@
       clear-flags: (NET_IF_NO_AUTO_START|NET_IF_POINTOPOINT)
 
       ipv6:
-        schema: zephyr,net-ipv6 # TODO: #79751 will ensure that no explicit
-                                # sub-schemas will be required any more unless
-                                # an independent entity model is actually to be
-                                # introduced for the node.
         enabled: true # Just for demonstration, this is the default.
 
         addrs: ["2001:db8:110::1"]
@@ -66,19 +65,16 @@
         mcast-hop-limit: 1
 
         prefixes:
-          schema: zephyr,net-ipv6-prefixes
           global:
             - addr: "2001:db8::"
               len: 64
               lifetime: 1024
 
         dhcp-client:
-          schema: zephyr,net-ipv6-dhcp-client
           req-addr: true
           req-prefix: false
 
       ipv4:
-        schema : zephyr,net-ipv4
         enabled: false # Properties in this node will be ignored.
 
         addrs: [192.0.2.10/24]
@@ -88,11 +84,9 @@
         mcast-ttl: 1
         autoconf: false
 
-        dhcp-client: # Using a node for forward compatibility.
-          schema: zephyr,net-ipv4-dhcp-client
+        dhcp-client: {} # Using a node for forward compatibility.
 
         dhcp-server: # Using a node for forward compatibility.
-          schema: zephyr,net-ipv4-dhcp-server
           base-addr: 192.168.1.100
 
       vlan:
