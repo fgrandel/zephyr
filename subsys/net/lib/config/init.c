@@ -28,7 +28,7 @@ LOG_MODULE_REGISTER(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 
 #include <zephyr/net/net_config.h>
 
-#include "ieee802154_settings.h"
+#include "init_ieee802154.h"
 
 extern int net_init_clock_via_sntp(void);
 
