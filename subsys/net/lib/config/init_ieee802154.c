@@ -18,7 +18,7 @@ LOG_MODULE_DECLARE(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/ieee802154_mgmt.h>
 
-#include "init_common.h"
+#include "macro_common.h"
 
 /* By simple encapsulation/information hiding principles, the radio driver should
  * not know about L3+ (nor the other way round). We therefore do not want to mix

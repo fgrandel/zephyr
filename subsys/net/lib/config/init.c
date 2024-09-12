@@ -20,7 +20,6 @@ LOG_MODULE_REGISTER(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_ip.h>
-#include <zephyr/net/net_if.h>
 #include <zephyr/net/dhcpv4.h>
 #include <zephyr/net/dhcpv4_server.h>
 #include <zephyr/net/dhcpv6.h>
@@ -31,214 +30,8 @@ LOG_MODULE_REGISTER(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 #include <zephyr/net/net_config.h>
 #include <zephyr/sys/atomic.h>
 
-#include "init_common.h"
+#include "init.h"
 #include "net_private.h"
-
-struct net_config_ipv6_prefix {
-	const char *addr;
-	uint32_t lifetime;
-	uint8_t len;
-};
-
-struct net_config_ipv6_dhcp_client {
-	bool req_addr;
-	bool req_prefix;
-};
-
-struct net_config_ipv6 {
-	const char **addrs;
-	const char **mcast_addrs;
-	struct net_config_ipv6_prefix *prefixes;
-	struct net_config_ipv6_dhcp_client *dhcp_client;
-	uint8_t hop_limit;
-	uint8_t mcast_hop_limit;
-	uint8_t num_addrs;
-	uint8_t num_mcast_addrs;
-	uint8_t num_prefixes;
-};
-
-struct net_config_ipv4 {
-	const char **addrs;
-	const char **mcast_addrs;
-	const char *gateway;
-	uint8_t ttl;
-	uint8_t mcast_ttl;
-	bool dhcp_client; /* Config sources and targets are structurally decoupled. */
-	bool autoconf;
-	const char *dhcp_server_base_addr;
-	uint8_t num_addrs;
-	uint8_t num_mcast_addrs;
-};
-
-struct net_config_vlan {
-	int tag;
-};
-
-struct net_config_sntp_server {
-	const char *server_name;
-	uint16_t timeout;
-};
-
-/**
- * These structures can be documented and optimized (padding, holes).
- */
-struct net_config_iface {
-	const struct device *const dev;
-	struct net_if *iface;       /* set at runtime, null if the device is not an interface */
-	int ifindex;                /* set at runtime */
-	const char *set_iface_name; /* null if not configured */
-	struct net_config_ipv6 *const ipv6;               /* null if not configured */
-	struct net_config_ipv4 *const ipv4;               /* null if not configured */
-	struct net_config_vlan *const vlan;               /* null if not configured */
-	struct net_config_sntp_server *const sntp_server; /* null if not configured */
-	uint32_t set_flags; /* binary flags are supported via config includes */
-	uint32_t clear_flags;
-	bool is_default;
-};
-
-#define NET_CONFIG_MUTABLE_FLAGS                                                                   \
-	(NET_IF_POINTOPOINT | NET_IF_PROMISC | NET_IF_NO_AUTO_START | NET_IF_FORWARD_MULTICASTS |  \
-	 NET_IF_IPV6_NO_ND | NET_IF_IPV6_NO_MLD)
-
-#define NET_CONFIG_SNTP_SERVER_STATE(_sntp_server_node_id)                                         \
-	{                                                                                          \
-		.server_name = DT_PROP(_sntp_server_node_id, server_name),                         \
-		.timeout = DT_PROP(_sntp_server_node_id, timeout),                                 \
-	},
-
-#define NET_CONFIG_SNTP_SERVERS(_sntp_servers_node_id)                                             \
-	static struct net_config_sntp_server sntp_servers[] = {DT_FOREACH_CHILD_STATUS_OKAY(       \
-		_sntp_servers_node_id, NET_CONFIG_SNTP_SERVER_STATE)};
-
-#define NET_CONFIG_SNTP_SERVER_PTR_OR_NULL(_iface_node_id)                                         \
-	COND_CODE_1(                                                                               \
-		DT_NODE_HAS_PROP(_iface_node_id, sntp_server),                                     \
-		(&sntp_servers[DT_REG_ADDR_BY_IDX(DT_PHANDLE(_iface_node_id, sntp_server), 0)]),   \
-		(NULL))
-
-#define NET_CONFIG_IPV6_PREFIX_STATE(_ipv6_prefix_node_id)                                         \
-	{                                                                                          \
-		.addr = DT_PROP(_ipv6_prefix_node_id, addr),                                       \
-		.len = DT_PROP(_ipv6_prefix_node_id, len),                                         \
-		.lifetime = DT_PROP(_ipv6_prefix_node_id, lifetime),                               \
-	},
-
-#define NET_CONFIG_IPV6_PREFIXES_STATE(_iface_node_id, _ipv6_prefixes_node_id,                     \
-				       _ipv6_prefixes_state_name)                                  \
-	(static struct net_config_ipv6_prefix NET_CONFIG_SUBSTATE2_NAME(_iface_node_id, ipv6,      \
-									prefixes)[] = {            \
-		 DT_FOREACH_CHILD_STATUS_OKAY(_ipv6_prefixes_node_id,                              \
-					      NET_CONFIG_IPV6_PREFIX_STATE)};)
-
-#define NET_CONFIG_IPV6_PREFIXES(_iface_node_id)                                                   \
-	NET_CONFIG_IF_SUBSTATE(NET_CONFIG_SUBNODE(_iface_node_id, ipv6), prefixes,                 \
-			       NET_CONFIG_IPV6_PREFIXES_STATE(                                     \
-				       _iface_node_id,                                             \
-				       NET_CONFIG_SUBNODE2(_iface_node_id, ipv6, prefixes),        \
-				       NET_CONFIG_SUBSTATE2_NAME(_iface_node_id, ipv6, prefixes)))
-
-#define NET_CONFIG_NUM_IPV6_PREFIXES(_iface_node_id)                                               \
-	NET_CONFIG_COND_SUBSTATE(                                                                  \
-		NET_CONFIG_SUBNODE(_iface_node_id, ipv6), prefixes,                                \
-		(DT_CHILD_NUM_STATUS_OKAY(NET_CONFIG_SUBNODE2(_iface_node_id, ipv6, prefixes))),   \
-		(0))
-
-#define NET_CONFIG_IPV6_DHCP_CLIENT_STATE(_ipv6_dhcp_client_node_id, _ipv6_dhcp_client_state_name) \
-	(static struct net_config_ipv6_dhcp_client _ipv6_dhcp_client_state_name = {                \
-		 .req_addr = DT_PROP(_ipv6_dhcp_client_node_id, req_addr),                         \
-		 .req_prefix = DT_PROP(_ipv6_dhcp_client_node_id, req_prefix),                     \
-	 };)
-
-#define NET_CONFIG_IPV6_DHCP_CLIENT(_iface_node_id)                                                \
-	NET_CONFIG_IF_SUBSTATE(                                                                    \
-		NET_CONFIG_SUBNODE(_iface_node_id, ipv6), dhcp_client,                             \
-		NET_CONFIG_IPV6_DHCP_CLIENT_STATE(                                                 \
-			NET_CONFIG_SUBNODE2(_iface_node_id, ipv6, dhcp_client),                    \
-			NET_CONFIG_SUBSTATE2_NAME(_iface_node_id, ipv6, dhcp_client)))
-
-#define NET_CONFIG_IPV6_STATE(_iface_node_id, _ipv6_node_id, _ipv6_state_name)                     \
-                                                                                                   \
-	(NET_CONFIG_SUBSTATE_STR_ARRAY(_iface_node_id, ipv6, addrs);                               \
-	NET_CONFIG_SUBSTATE_STR_ARRAY(_iface_node_id, ipv6, mcast_addrs);                         \
-                                                                                                   \
-	static struct net_config_ipv6 _ipv6_state_name = {                                        \
-		 .addrs = NET_CONFIG_SUBSTATE2_NAME(_iface_node_id, ipv6, addrs),                  \
-		 .mcast_addrs = NET_CONFIG_SUBSTATE2_NAME(_iface_node_id, ipv6, mcast_addrs),      \
-		 .dhcp_client =                                                                    \
-			 NET_CONFIG_SUBSTATE2_PTR_OR_NULL(_iface_node_id, ipv6, dhcp_client),      \
-		 .prefixes = NET_CONFIG_SUBSTATE2_OR_NULL(_iface_node_id, ipv6, prefixes),         \
-		 .hop_limit = DT_PROP(_ipv6_node_id, hop_limit),                                   \
-		 .mcast_hop_limit = DT_PROP(_ipv6_node_id, mcast_hop_limit),                       \
-		 .num_addrs = DT_PROP_LEN(_ipv6_node_id, addrs),                                   \
-		 .num_mcast_addrs = DT_PROP_LEN(_ipv6_node_id, mcast_addrs),                       \
-		 .num_prefixes = NET_CONFIG_NUM_IPV6_PREFIXES(_iface_node_id),                     \
-	};)
-
-#define NET_CONFIG_IPV4_STATE(_iface_node_id, _ipv4_node_id, _ipv4_state_name)                     \
-                                                                                                   \
-	(NET_CONFIG_SUBSTATE_STR_ARRAY(_iface_node_id, ipv4, addrs);                               \
-	NET_CONFIG_SUBSTATE_STR_ARRAY(_iface_node_id, ipv4, mcast_addrs);                         \
-                                                                                                   \
-	static struct net_config_ipv4 _ipv4_state_name = {                                        \
-		 .addrs = NET_CONFIG_SUBSTATE2_NAME(_iface_node_id, ipv4, addrs),                  \
-		 .mcast_addrs = NET_CONFIG_SUBSTATE2_NAME(_iface_node_id, ipv4, mcast_addrs),      \
-		 .gateway = DT_PROP(_ipv4_node_id, gateway),                                       \
-		 .ttl = DT_PROP(_ipv4_node_id, ttl),                                               \
-		 .mcast_ttl = DT_PROP(_ipv4_node_id, mcast_ttl),                                   \
-		 .dhcp_client = NET_CONFIG_COND_SUBSTATE(_ipv4_node_id, dhcp_client, (1), (0)),    \
-		 .dhcp_server_base_addr = DT_PROP_OR(                                              \
-			 NET_CONFIG_SUBNODE(_ipv4_node_id, dhcp_server), base_addr, NULL),         \
-		 .autoconf = DT_PROP(_ipv4_node_id, autoconf),                                     \
-		 .num_addrs = DT_PROP_LEN(_ipv4_node_id, addrs),                                   \
-		 .num_mcast_addrs = DT_PROP_LEN(_ipv4_node_id, mcast_addrs),                       \
-	};)
-
-#define NET_CONFIG_VLAN_STATE(_iface_node_id, _vlan_node_id, _vlan_state_name)                     \
-	(static struct net_config_vlan _vlan_state_name = {                                        \
-		 .tag = DT_PROP(_vlan_node_id, tag),                                               \
-	 };)
-
-#define NET_CONFIG_IPV6(_iface_node_id)                                                            \
-	NET_CONFIG_IF_SUBSTATE(                                                                    \
-		_iface_node_id, ipv6,                                                              \
-		NET_CONFIG_IPV6_STATE(_iface_node_id, NET_CONFIG_SUBNODE(_iface_node_id, ipv6),    \
-				      NET_CONFIG_SUBSTATE_NAME(_iface_node_id, ipv6)))
-
-#define NET_CONFIG_IPV4(_iface_node_id)                                                            \
-	NET_CONFIG_IF_SUBSTATE(                                                                    \
-		_iface_node_id, ipv4,                                                              \
-		NET_CONFIG_IPV4_STATE(_iface_node_id, NET_CONFIG_SUBNODE(_iface_node_id, ipv4),    \
-				      NET_CONFIG_SUBSTATE_NAME(_iface_node_id, ipv4)))
-
-/* Structures not present in the config will consume no resources. */
-#define NET_CONFIG_VLAN(_iface_node_id)                                                            \
-	NET_CONFIG_IF_SUBSTATE(                                                                    \
-		_iface_node_id, vlan,                                                              \
-		NET_CONFIG_VLAN_STATE(_iface_node_id, NET_CONFIG_SUBNODE(_iface_node_id, vlan),    \
-				      NET_CONFIG_SUBSTATE_NAME(_iface_node_id, vlan)))
-
-#define NET_CONFIG_IFACE_STATE(_iface_node_id)                                                     \
-	{                                                                                          \
-		.dev = DEVICE_DT_GET(NET_CONFIG_NET_DEVICE(_iface_node_id)),                       \
-		.set_iface_name = DT_PROP_OR(_iface_node_id, set_iface_name, NULL),                \
-		.ipv6 = NET_CONFIG_SUBSTATE_PTR_OR_NULL(_iface_node_id, ipv6),                     \
-		.ipv4 = NET_CONFIG_SUBSTATE_PTR_OR_NULL(_iface_node_id, ipv4),                     \
-		.vlan = NET_CONFIG_SUBSTATE_PTR_OR_NULL(_iface_node_id, vlan),                     \
-		.sntp_server = NET_CONFIG_SNTP_SERVER_PTR_OR_NULL(_iface_node_id),                 \
-		.set_flags = DT_PROP(_iface_node_id, set_flags),                                   \
-		.clear_flags = DT_PROP(_iface_node_id, clear_flags),                               \
-		.is_default = DT_PROP(_iface_node_id, is_default),                                 \
-	},
-
-BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(zephyr_net_lib_sntp_servers) <= 1,
-	     "Only one SNTP servers configuration with status 'okay' is supported.");
-
-DT_FOREACH_STATUS_OKAY(zephyr_net_lib_sntp_servers, NET_CONFIG_SNTP_SERVERS)
-DT_FOREACH_STATUS_OKAY(zephyr_net_iface, NET_CONFIG_IPV6_PREFIXES)
-DT_FOREACH_STATUS_OKAY(zephyr_net_iface, NET_CONFIG_IPV6_DHCP_CLIENT)
-DT_FOREACH_STATUS_OKAY(zephyr_net_iface, NET_CONFIG_IPV6)
-DT_FOREACH_STATUS_OKAY(zephyr_net_iface, NET_CONFIG_IPV4)
-DT_FOREACH_STATUS_OKAY(zephyr_net_iface, NET_CONFIG_VLAN)
 
 extern int net_init_clock_via_sntp(struct net_if *iface, const char *server, int timeout);
 
@@ -249,21 +42,26 @@ static K_SEM_DEFINE(counter, 0, UINT_MAX);
 static struct net_mgmt_event_callback mgmt_iface_cb;
 #endif
 
-static struct net_config_iface net_config_ifaces[] = {
-	DT_FOREACH_STATUS_OKAY(zephyr_net_iface, NET_CONFIG_IFACE_STATE)};
 static bool is_initialized;
 
 static struct net_config_iface *get_cfg_by_iface(struct net_if *iface)
 {
+	struct net_config_iface *cfgs;
+	int num_cfg;
+
 	__ASSERT_NO_MSG(is_initialized)
+
+	if (net_config_ifaces(&cfgs, &num_cfg) < 0) {
+		return NULL;
+	}
 
 	if (!iface) {
 		return NULL;
 	}
 
-	ARRAY_FOR_EACH_PTR(net_config_ifaces, cfg) {
-		if (cfg->iface == iface) {
-			return cfg;
+	for (int i = 0; i < num_cfg; i++) {
+		if (cfgs[i].iface == iface) {
+			return &cfgs[i];
 		}
 	}
 
@@ -272,11 +70,18 @@ static struct net_config_iface *get_cfg_by_iface(struct net_if *iface)
 
 static struct net_config_iface *get_default_cfg(void)
 {
+	struct net_config_iface *cfgs;
+	int num_cfg;
+
 	__ASSERT_NO_MSG(is_initialized)
 
-	ARRAY_FOR_EACH_PTR(net_config_ifaces, cfg) {
-		if (cfg->is_default) {
-			return cfg;
+	if (net_config_ifaces(&cfgs, &num_cfg) < 0) {
+		return NULL;
+	}
+
+	for (int i = 0; i < num_cfg; i++) {
+		if (cfgs[i].is_default) {
+			return &cfgs[i];
 		}
 	}
 
@@ -286,7 +91,18 @@ static struct net_config_iface *get_default_cfg(void)
 void net_config_pre_init(void)
 {
 	if (!is_initialized) {
-		ARRAY_FOR_EACH_PTR(net_config_ifaces, cfg) {
+		struct net_config_iface *cfgs;
+		int num_cfg;
+
+		net_config_target_pre_init();
+
+		if (net_config_ifaces(&cfgs, &num_cfg) < 0) {
+			return;
+		}
+
+		for (int i = 0; i < num_cfg; i++) {
+			struct net_config_iface *cfg = &cfgs[i];
+
 			bool default_updated = false;
 
 			NET_ASSERT(cfg->dev,

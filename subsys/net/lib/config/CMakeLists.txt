@@ -6,7 +6,7 @@ zephyr_library_compile_definitions_ifdef(
   )
 
 if(CONFIG_NET_CONFIG_SETTINGS)
-  zephyr_library_sources(init.c)
+  zephyr_library_sources(init.c init_macro.c)
   zephyr_library_sources_ifdef(CONFIG_NET_L2_IEEE802154 init_ieee802154.c)
   zephyr_library_include_directories(${ZEPHYR_BASE}/subsys/net/ip)
 

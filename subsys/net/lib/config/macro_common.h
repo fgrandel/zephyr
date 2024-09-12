@@ -1,4 +1,4 @@
-/* L3+ network settings header */
+/* Header to be shared by all macro config targets. */
 
 /*
  * Copyright (c) 2024 The Zephyr Project.
@@ -6,10 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef __NET_LIB_CONFIG_COMMON_H__
-#define __NET_LIB_CONFIG_COMMON_H__
-
-#include <stdbool.h>
+#ifndef __NET_LIB_CONFIG_MACRO_COMMON_H__
+#define __NET_LIB_CONFIG_MACRO_COMMON_H__
 
 #include <zephyr/devicetree.h>
 #include <zephyr/device.h>
@@ -58,4 +56,4 @@
 						     _str_array_field)[] =                         \
 		DT_PROP(NET_CONFIG_SUBNODE(_iface_node_id, _subnode), _str_array_field)
 
-#endif /* __NET_LIB_CONFIG_COMMON_H__ */
+#endif /* __NET_LIB_CONFIG_MACRO_COMMON_H__ */
