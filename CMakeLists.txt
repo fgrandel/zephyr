@@ -2094,9 +2094,8 @@ if(CONFIG_FLASH_SIMULATOR_PROVISION)
     --name ${flash_simulator_image_name}
     --input-dir ${CMAKE_CURRENT_BINARY_DIR}
     --output-dir ${CMAKE_CURRENT_BINARY_DIR}
-    --include "/alpha"
-    --include "':&some_label'"
-    --exclude-prop "compatible"
+    --include "/subsys/net"
+    --include "'/subsys/net/ieee802154:&ieee802154'"
     --devices-start-symbol "$<TARGET_PROPERTY:linker,devices_start_symbol>"
     --verbose
     DEPENDS ${logical_target_for_zephyr_elf}
