@@ -2077,6 +2077,35 @@ add_custom_command(
   COMMAND_EXPAND_LISTS
   )
 
+# TODO: Expand this to arbitrary config sections and general settings
+# targets. This is just a PoC that can be tested locally w/o hardware.
+if(CONFIG_FLASH_SIMULATOR_PROVISION)
+  set(flash_simulator_image_name soc-nv-flash-image)
+  list(APPEND flash_simulator_provision_files
+    ${CMAKE_CURRENT_BINARY_DIR}/${flash_simulator_image_name}.hex
+    ${CMAKE_CURRENT_BINARY_DIR}/${flash_simulator_image_name}.bin
+    )
+
+  add_custom_command(
+    OUTPUT ${flash_simulator_provision_files}
+    COMMAND
+    ${PYTHON_EXECUTABLE}
+    ${ZEPHYR_BASE}/scripts/build/gen_settings_nvs.py
+    --name ${flash_simulator_image_name}
+    --input-dir ${CMAKE_CURRENT_BINARY_DIR}
+    --output-dir ${CMAKE_CURRENT_BINARY_DIR}
+    --include "/alpha"
+    --include "':&some_label'"
+    --exclude-prop "compatible"
+    --devices-start-symbol "$<TARGET_PROPERTY:linker,devices_start_symbol>"
+    --verbose
+    DEPENDS ${logical_target_for_zephyr_elf}
+    )
+
+  add_custom_target(gen_settings_nvs DEPENDS ${flash_simulator_provision_files})
+endif()
+
+
 # To populate with hex files to merge, do the following:
 #  set_property(GLOBAL APPEND PROPERTY HEX_FILES_TO_MERGE ${my_local_list})
 # Note that the zephyr.hex file will not be included automatically.
