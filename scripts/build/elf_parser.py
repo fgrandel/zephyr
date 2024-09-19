@@ -7,13 +7,47 @@
 import struct
 import sys
 from packaging import version
+from typing import Optional, Union, NewType
+from pathlib import PurePath
+from ctypes import (
+    Structure,
+    LittleEndianStructure,
+    BigEndianStructure,
+    c_uint8,
+    c_uint16,
+    c_uint32,
+    c_uint64,
+    sizeof,
+)
 
 import elftools
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
+from elftools.dwarf.die import DIE
+from elftools.common.exceptions import DWARFError
 
 if version.parse(elftools.__version__) < version.parse('0.24'):
     sys.exit("pyelftools is out of date, need version 0.24 or later")
+
+# Unfortunately the ctypes module does not expose a public base type for struct
+# fields, so we define our own. Please note that we only permit platform
+# independent types.
+_CType = Union[c_uint8 | c_uint16 | c_uint32 | c_uint64]
+_StructureField = Union[tuple[str, _CType] | tuple[str, _CType, int]]
+
+# We only keep the types that are currently being used. Add more on an as-needed
+# basis. Only primitive types need to be mapped.  We map types to uint*_t types
+# to ensure host platform independence.
+_C_TYPE_DATA_MODEL: dict[int, dict[str, _CType]] = {
+    32: {
+        "unsigned char": c_uint8,
+        "short unsigned int": c_uint16,
+    },
+    64: {
+        "unsigned char": c_uint8,
+        "short unsigned int": c_uint16,
+    },
+}
 
 class _Symbol:
     """
@@ -121,13 +155,22 @@ class ZephyrElf:
     """
     Represents information about devices in an elf file.
     """
-    def __init__(self, kernel, edt, device_start_symbol):
+    def __init__(self, kernel, edt, device_start_symbol: Optional[str] = None):
         self.elf = ELFFile(open(kernel, "rb"))
         self.relocatable = self.elf['e_type'] == 'ET_REL'
         self.edt = edt
         self.devices = []
-        self.ld_consts = self._symbols_find_value(set([device_start_symbol, *Device.required_ld_consts, *DevicePM.required_ld_consts]))
-        self._device_parse_and_link()
+        if device_start_symbol is not None:
+            self.ld_consts = self._symbols_find_value(
+                set(
+                    [
+                        device_start_symbol,
+                        *Device.required_ld_consts,
+                        *DevicePM.required_ld_consts,
+                    ]
+                )
+            )
+            self._device_parse_and_link()
 
     @property
     def little_endian(self):
@@ -184,6 +227,82 @@ class ZephyrElf:
                         continue
                     if sym.name.startswith(prefix):
                         cb(sym)
+
+    def get_struct(self, cu_path: str, struct_name: str) -> Optional[Structure]:
+        struct_die = self._get_struct_DIE(cu_path, struct_name)
+        if struct_die is None:
+            return None
+
+        members = [
+            self._get_struct_field(member_die)
+            for member_die in struct_die.iter_children()
+        ]
+
+        class StructClass(
+            LittleEndianStructure if self.little_endian else BigEndianStructure
+        ):
+            _fields_ = members
+
+        struct_class_name = struct_name.replace("_", " ").title().replace(" ", "")
+        StructClass.__name__ = f"Struct{struct_class_name}"
+        StructClass.__qualname__ = StructClass.__name__
+
+        return StructClass
+
+    def _get_struct_DIE(self, cu_path: str, struct_name: str) -> Optional[DIE]:
+        if not self.elf.has_dwarf_info():
+            return None
+        dwarf_info = self.elf.get_dwarf_info()
+        for cu in dwarf_info.iter_CUs():
+            cu_die: DIE = cu.get_top_DIE()
+            path = PurePath(cu_die.attributes["DW_AT_name"].value.decode("utf-8"))
+            if not path.match(cu_path):
+                continue
+
+            struct_die: DIE
+            for struct_die in cu_die.iter_children():
+                if (
+                    struct_die.tag == "DW_TAG_structure_type"
+                    and "DW_AT_name" in struct_die.attributes.keys()
+                    and struct_die.attributes["DW_AT_name"].value
+                    == struct_name.encode()
+                ):
+                    return struct_die
+
+        return None
+
+    def _get_struct_field(self, member_die: DIE) -> _StructureField:
+        # Identifies and returns the nominal type of the struct member, its name
+        # and the C type that represents it.
+
+        if member_die.tag != "DW_TAG_member":
+            raise ValueError("Expected a DW_TAG_member DIE")
+
+        type_die = member_die.get_DIE_from_attribute("DW_AT_type")
+        while "DW_AT_type" in type_die.attributes:
+            type_die = type_die.get_DIE_from_attribute("DW_AT_type")
+
+        (member_name, primary_type, byte_size) = (
+            member_die.attributes["DW_AT_name"].value.decode("utf-8"),
+            type_die.attributes["DW_AT_name"].value.decode("utf-8"),
+            type_die.attributes["DW_AT_byte_size"].value,
+        )
+
+        elf_class = self.elf.elfclass
+        if primary_type not in _C_TYPE_DATA_MODEL[elf_class]:
+            struct_name = (
+                member_die.get_parent().attributes["DW_AT_name"].value.decode("utf-8")
+            )
+            raise DWARFError(
+                f"Unknown type '{primary_type}' for member '{member_name}' of '{struct_name}'."
+            )
+
+        c_type = _C_TYPE_DATA_MODEL[elf_class][primary_type]
+        assert (
+            sizeof(c_type) == byte_size
+        ), f"Invalid byte size for type '{primary_type}': expected '{byte_size}', found '{sizeof(c_type)}'."
+
+        return (member_name, c_type)
 
     def _link_devices(self, devices):
         # Compute the dependency graph induced from the full graph restricted to the
