@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+
+include: node.yaml
+
+description: |
+  Settings Sample Configuration
+
+compatible: "zephyr,sample-settings"
+
+properties:
+  gamma:
+    type: int
+
+child-binding:
+  properties:
+    '1':
+      type: int
+    '2':
+      type: int
+    voltage:
+      type: int
+    source:
+      type: string
