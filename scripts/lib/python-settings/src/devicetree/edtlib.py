@@ -88,7 +88,6 @@ from devicetree.dtlib import DT, DTError, to_num, to_nums, Type
 from devicetree.dtlib import Node as dtlib_Node
 from devicetree.dtlib import Property as dtlib_Property
 from devicetree.grutils import Graph
-from devicetree._private import _slice_helper
 
 #
 # Public classes
@@ -3281,6 +3280,33 @@ def _slice(node: dtlib_Node,
            size: int,
            size_hint: str) -> List[bytes]:
     return _slice_helper(node, prop_name, size, size_hint, EDTError)
+
+
+def _slice_helper(
+    node: Any,  # avoids a circular import with dtlib
+    prop_name: str,
+    size: int,
+    size_hint: str,
+    err_class: Callable[..., Exception],
+):
+    # Splits node.props[prop_name].value into 'size'-sized chunks,
+    # returning a list of chunks. Raises err_class(...) if the length
+    # of the property is not evenly divisible by 'size'. The argument
+    # to err_class is a string which describes the error.
+    #
+    # 'size_hint' is a string shown on errors that gives a hint on how
+    # 'size' was calculated.
+
+    raw = node.props[prop_name].value
+    if len(raw) % size:
+        raise err_class(
+            f"'{prop_name}' property in {node!r} has length {len(raw)}, "
+            f"which is not evenly divisible by {size} (= {size_hint}). "
+            "Note that #*-cells properties come either from the parent node or "
+            "from the controller (in the case of 'interrupts')."
+        )
+
+    return [raw[i : i + size] for i in range(0, len(raw), size)]
 
 
 def _check_dt(dt: DT) -> None:
