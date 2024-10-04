@@ -28,6 +28,7 @@ sys.path.insert(
 
 import edtlib_logger
 from devicetree import edtlib
+from bindings import str_as_token
 
 
 def main():
@@ -109,7 +110,7 @@ def main():
         write_global_macros(edt)
 
 
-def node_z_path_id(node: edtlib.Node) -> str:
+def node_z_path_id(node: edtlib.EDTNode) -> str:
     # Return the node specific bit of the node's path identifier:
     #
     # - the root node's path "/" has path identifier "N"
@@ -177,7 +178,7 @@ def write_utils() -> None:
     out_define("DT_DEBRACKET_INTERNAL(...)", "__VA_ARGS__")
 
 
-def write_node_comment(node: edtlib.Node) -> None:
+def write_node_comment(node: edtlib.EDTNode) -> None:
     # Writes a comment describing 'node' to the header and configuration file
 
     s = f"""\
@@ -232,7 +233,7 @@ def relativize(path) -> Optional[str]:
         return path
 
 
-def write_idents_and_existence(node: edtlib.Node) -> None:
+def write_idents_and_existence(node: edtlib.EDTNode) -> None:
     # Writes macros related to the node's aliases, labels, etc.,
     # as well as existence flags.
 
@@ -255,7 +256,7 @@ def write_idents_and_existence(node: edtlib.Node) -> None:
         out_dt_define(ident, "DT_" + node.z_path_id, width=maxlen)
 
 
-def write_bus(node: edtlib.Node) -> None:
+def write_bus(node: edtlib.EDTNode) -> None:
     # Macros about the node's bus controller, if there is one
 
     bus = node.bus_node
@@ -270,7 +271,7 @@ def write_bus(node: edtlib.Node) -> None:
     out_dt_define(f"{node.z_path_id}_BUS", f"DT_{bus.z_path_id}")
 
 
-def write_special_props(node: edtlib.Node) -> None:
+def write_special_props(node: edtlib.EDTNode) -> None:
     # Writes required macros for special case properties, when the
     # data cannot otherwise be obtained from write_vanilla_props()
     # results
@@ -290,7 +291,7 @@ def write_special_props(node: edtlib.Node) -> None:
     write_gpio_hogs(node)
 
 
-def write_ranges(node: edtlib.Node) -> None:
+def write_ranges(node: edtlib.EDTNode) -> None:
     # ranges property: edtlib knows the right #address-cells and
     # #size-cells of parent and child, and can therefore pack the
     # child & parent addresses and sizes correctly
@@ -334,7 +335,7 @@ def write_ranges(node: edtlib.Node) -> None:
             " ".join(f"fn(DT_{path_id}, {i})" for i,range in enumerate(node.ranges)))
 
 
-def write_regs(node: edtlib.Node) -> None:
+def write_regs(node: edtlib.EDTNode) -> None:
     # reg property: edtlib knows the right #address-cells and
     # #size-cells, and can therefore pack the register base addresses
     # and sizes correctly
@@ -371,7 +372,7 @@ def write_regs(node: edtlib.Node) -> None:
         out_dt_define(macro, val)
 
 
-def write_interrupts(node: edtlib.Node) -> None:
+def write_interrupts(node: edtlib.EDTNode) -> None:
     # interrupts property: we have some hard-coded logic for interrupt
     # mapping here.
     #
@@ -439,7 +440,7 @@ def write_interrupts(node: edtlib.Node) -> None:
         out_dt_define(macro, val)
 
 
-def write_compatibles(node: edtlib.Node) -> None:
+def write_compatibles(node: edtlib.EDTNode) -> None:
     # Writes a macro for each of the node's compatibles. We don't care
     # about whether edtlib / Zephyr's binding language recognizes
     # them. The compatibles the node provides are what is important.
@@ -459,7 +460,7 @@ def write_compatibles(node: edtlib.Node) -> None:
                           quote_str(node.edt.compat2model[compat]))
 
 
-def write_children(node: edtlib.Node) -> None:
+def write_children(node: edtlib.EDTNode) -> None:
     # Writes helper macros for dealing with node's children.
 
     out_comment("Helper macros for child nodes of this node.")
@@ -506,11 +507,11 @@ def write_children(node: edtlib.Node) -> None:
             for child in node.children.values() if child.status == "okay"))
 
 
-def write_status(node: edtlib.Node) -> None:
+def write_status(node: edtlib.EDTNode) -> None:
     out_dt_define(f"{node.z_path_id}_STATUS_{str2ident(node.status)}", 1)
 
 
-def write_pinctrls(node: edtlib.Node) -> None:
+def write_pinctrls(node: edtlib.EDTNode) -> None:
     # Write special macros for pinctrl-<index> and pinctrl-names properties.
 
     out_comment("Pin control (pinctrl-<i>, pinctrl-names) properties:")
@@ -540,7 +541,7 @@ def write_pinctrls(node: edtlib.Node) -> None:
                           f"DT_{ph.z_path_id}")
 
 
-def write_fixed_partitions(node: edtlib.Node) -> None:
+def write_fixed_partitions(node: edtlib.EDTNode) -> None:
     # Macros for child nodes of each fixed-partitions node.
 
     if not (node.parent and "fixed-partitions" in node.parent.compats):
@@ -552,7 +553,7 @@ def write_fixed_partitions(node: edtlib.Node) -> None:
     flash_area_num += 1
 
 
-def write_gpio_hogs(node: edtlib.Node) -> None:
+def write_gpio_hogs(node: edtlib.EDTNode) -> None:
     # Write special macros for gpio-hog node properties.
 
     macro = f"{node.z_path_id}_GPIO_HOGS"
@@ -568,7 +569,7 @@ def write_gpio_hogs(node: edtlib.Node) -> None:
             out_dt_define(macro, val)
 
 
-def write_vanilla_props(node: edtlib.Node) -> None:
+def write_vanilla_props(node: edtlib.EDTNode) -> None:
     # Writes macros for any and all properties defined in the
     # "properties" section of the binding for the node.
     #
@@ -649,7 +650,7 @@ def string_macros(macro: str, val: str):
     # Returns a dict of macros for a string 'val'.
     # The 'macro' argument is the N_<node-id>_P_<prop-id>... part.
 
-    as_token = edtlib.str_as_token(val)
+    as_token = str_as_token(val)
     return {
         # DT_N_<node-id>_P_<prop-id>_IDX_<i>_STRING_UNQUOTED
         f"{macro}_STRING_UNQUOTED": escape_unquoted(val),
@@ -705,7 +706,7 @@ def array_macros(prop: edtlib.Property, macro: str):
     return ret
 
 
-def write_dep_info(node: edtlib.Node) -> None:
+def write_dep_info(node: edtlib.EDTNode) -> None:
     # Write dependency-related information about the node.
 
     def fmt_dep_list(dep_list):
@@ -731,7 +732,7 @@ def write_dep_info(node: edtlib.Node) -> None:
                   fmt_dep_list(node.required_by))
 
 
-def prop2value(prop: edtlib.Property) -> edtlib.PropertyValType:
+def prop2value(prop: edtlib.EDTProperty) -> edtlib.PropertyValType:
     # Gets the macro value for property 'prop', if there is
     # a single well-defined C rvalue that it can be represented as.
     # Returns None if there isn't one.
@@ -755,7 +756,7 @@ def prop2value(prop: edtlib.Property) -> edtlib.PropertyValType:
     return None
 
 
-def prop_len(prop: edtlib.Property) -> Optional[int]:
+def prop_len(prop: edtlib.EDTProperty) -> Optional[int]:
     # Returns the property's length if and only if we should generate
     # a _LEN macro for the property. Otherwise, returns None.
     #
@@ -790,7 +791,7 @@ def prop_len(prop: edtlib.Property) -> Optional[int]:
     return None
 
 
-def phandle_macros(prop: edtlib.Property, macro: str) -> dict:
+def phandle_macros(prop: edtlib.EDTProperty, macro: str) -> dict:
     # Returns a dict of macros for phandle or phandles property 'prop'.
     #
     # The 'macro' argument is the N_<node-id>_P_<prop-id> bit.

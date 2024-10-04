@@ -18,6 +18,7 @@ import re
 import sys
 import textwrap
 
+from bindings import bindings_from_paths
 from devicetree import edtlib
 
 import gen_helpers
@@ -200,7 +201,7 @@ def setup_logging(verbose):
                         level=log_level)
 
 def load_bindings(dts_roots, dts_folders):
-    # Get a list of edtlib.Binding objects from searching 'dts_roots'.
+    # Get a list of bindings.Binding objects from searching 'dts_roots'.
 
     if not dts_roots:
         sys.exit('no DTS roots; use --dts-root to specify at least one')
@@ -215,7 +216,7 @@ def load_bindings(dts_roots, dts_folders):
         binding_files.extend(glob.glob(f'{folders}/*.yml', recursive=False))
         binding_files.extend(glob.glob(f'{folders}/*.yaml', recursive=False))
 
-    bindings = edtlib.bindings_from_paths(binding_files, ignore_errors=True)
+    bindings = bindings_from_paths(binding_files, ignore_errors=True)
 
     num_total = len(bindings)
 
@@ -241,8 +242,12 @@ def load_base_binding():
 
     if not base_yaml.is_file():
         sys.exit(f'Expected to find base.yaml at {base_yaml}')
-    return edtlib.Binding(os.fspath(base_yaml), base_includes, require_compatible=False,
-                          require_description=False)
+    return bindings.Binding(
+        os.fspath(base_yaml),
+        base_includes,
+        require_compatible=False,
+        require_description=False,
+    )
 
 def load_driver_sources():
     driver_sources = {}
@@ -692,7 +697,7 @@ def print_child_binding_properties(binding, string_io):
 
 def print_property_table(prop_specs, string_io, deprecated=False):
     # Writes a table of properties based on 'prop_specs', an iterable
-    # of edtlib.PropertySpec objects, to 'string_io'.
+    # of bindings.PropertySpec objects, to 'string_io'.
     #
     # If 'deprecated' is true and the property is deprecated, an extra
     # line is printed mentioning that fact. We allow this to be turned

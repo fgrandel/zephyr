@@ -23,7 +23,8 @@ SCRIPTS = ZEPHYR_BASE / 'scripts'
 
 sys.path.insert(0, str(SCRIPTS / "lib" / "python-settings" / "src"))
 
-from devicetree.edtlib import Binding, bindings_from_paths, load_vendor_prefixes_txt
+from devicetree.edtlib import load_vendor_prefixes_txt
+from bindings import Binding, bindings_from_paths
 
 # The Compat type is a (compatible, on_bus) pair, which is used as a
 # lookup key for bindings. The name "compat" matches edtlib's internal

@@ -10,15 +10,16 @@ from pathlib import Path
 
 import pytest
 
+import bindings
 from devicetree import edtlib
 
 # Test suite for edtlib.py.
 #
 # Run it using pytest (https://docs.pytest.org/en/stable/usage.html):
 #
-#   $ pytest testedtlib.py
+#   $ pytest test_edtlib.py
 #
-# See the comment near the top of testdtlib.py for additional pytest advice.
+# See the comment near the top of test_dtlib.py for additional pytest advice.
 #
 # test.dts is the main test file. test-bindings/ and test-bindings-2/ has
 # bindings. The tests mostly use string comparisons via the various __repr__()
@@ -230,14 +231,20 @@ def test_hierarchy():
 
     assert edt.get_node("/").parent is None
 
-    assert str(edt.get_node("/parent/child-1").parent) == \
-        "<Node /parent in 'test.dts', no binding>"
+    assert (
+        str(edt.get_node("/parent/child-1").parent)
+        == "<EDTNode /parent in 'test.dts', no binding>"
+    )
 
-    assert str(edt.get_node("/parent/child-2/grandchild").parent) == \
-        "<Node /parent/child-2 in 'test.dts', no binding>"
+    assert (
+        str(edt.get_node("/parent/child-2/grandchild").parent)
+        == "<EDTNode /parent/child-2 in 'test.dts', no binding>"
+    )
 
-    assert str(edt.get_node("/parent").children) == \
-        "{'child-1': <Node /parent/child-1 in 'test.dts', no binding>, 'child-2': <Node /parent/child-2 in 'test.dts', no binding>}"
+    assert (
+        str(edt.get_node("/parent").children)
+        == "{'child-1': <EDTNode /parent/child-1 in 'test.dts', no binding>, 'child-2': <EDTNode /parent/child-2 in 'test.dts', no binding>}"
+    )
 
     assert edt.get_node("/parent/child-1").children == {}
 
@@ -273,127 +280,6 @@ def test_include():
                  ['foo', 'bar', 'baz', 'qaz'],
                  ['int', 'int', 'int', 'int'],
                  [0, 1, 2, 3])
-
-def test_include_filters():
-    '''Test property-allowlist and property-blocklist in an include.'''
-
-    fname2path = {'include.yaml': 'test-bindings-include/include.yaml',
-                  'include-2.yaml': 'test-bindings-include/include-2.yaml'}
-
-    with pytest.raises(edtlib.EDTError) as e:
-        with from_here():
-            edtlib.Binding("test-bindings-include/allow-and-blocklist.yaml", fname2path)
-    assert ("should not specify both 'property-allowlist:' and 'property-blocklist:'"
-            in str(e.value))
-
-    with pytest.raises(edtlib.EDTError) as e:
-        with from_here():
-            edtlib.Binding("test-bindings-include/allow-and-blocklist-child.yaml", fname2path)
-    assert ("should not specify both 'property-allowlist:' and 'property-blocklist:'"
-            in str(e.value))
-
-    with pytest.raises(edtlib.EDTError) as e:
-        with from_here():
-            edtlib.Binding("test-bindings-include/allow-not-list.yaml", fname2path)
-    value_str = str(e.value)
-    assert value_str.startswith("'property-allowlist' value")
-    assert value_str.endswith("should be a list")
-
-    with pytest.raises(edtlib.EDTError) as e:
-        with from_here():
-            edtlib.Binding("test-bindings-include/block-not-list.yaml", fname2path)
-    value_str = str(e.value)
-    assert value_str.startswith("'property-blocklist' value")
-    assert value_str.endswith("should be a list")
-
-    with pytest.raises(edtlib.EDTError) as e:
-        with from_here():
-            binding = edtlib.Binding("test-bindings-include/include-invalid-keys.yaml", fname2path)
-    value_str = str(e.value)
-    assert value_str.startswith(
-        "'include:' in test-bindings-include/include-invalid-keys.yaml should not have these "
-        "unexpected contents: ")
-    assert 'bad-key-1' in value_str
-    assert 'bad-key-2' in value_str
-
-    with pytest.raises(edtlib.EDTError) as e:
-        with from_here():
-            binding = edtlib.Binding("test-bindings-include/include-invalid-type.yaml", fname2path)
-    value_str = str(e.value)
-    assert value_str.startswith(
-        "'include:' in test-bindings-include/include-invalid-type.yaml "
-        "should be a string or list, but has type ")
-
-    with pytest.raises(edtlib.EDTError) as e:
-        with from_here():
-            binding = edtlib.Binding("test-bindings-include/include-no-name.yaml", fname2path)
-    value_str = str(e.value)
-    assert value_str.startswith("'include:' element")
-    assert value_str.endswith(
-        "in test-bindings-include/include-no-name.yaml should have a 'name' key")
-
-    with from_here():
-        binding = edtlib.Binding("test-bindings-include/allowlist.yaml", fname2path)
-        assert set(binding.prop2specs.keys()) == {'x'}  # 'x' is allowed
-
-        binding = edtlib.Binding("test-bindings-include/empty-allowlist.yaml", fname2path)
-        assert set(binding.prop2specs.keys()) == set()  # nothing is allowed
-
-        binding = edtlib.Binding("test-bindings-include/blocklist.yaml", fname2path)
-        assert set(binding.prop2specs.keys()) == {'y', 'z'}  # 'x' is blocked
-
-        binding = edtlib.Binding("test-bindings-include/empty-blocklist.yaml", fname2path)
-        assert set(binding.prop2specs.keys()) == {'x', 'y', 'z'}  # nothing is blocked
-
-        binding = edtlib.Binding("test-bindings-include/intermixed.yaml", fname2path)
-        assert set(binding.prop2specs.keys()) == {'x', 'a'}
-
-        binding = edtlib.Binding("test-bindings-include/include-no-list.yaml", fname2path)
-        assert set(binding.prop2specs.keys()) == {'x', 'y', 'z'}
-
-        binding = edtlib.Binding("test-bindings-include/filter-child-bindings.yaml", fname2path)
-        child = binding.child_binding
-        grandchild = child.child_binding
-        assert set(binding.prop2specs.keys()) == {'x'}
-        assert set(child.prop2specs.keys()) == {'child-prop-2'}
-        assert set(grandchild.prop2specs.keys()) == {'grandchild-prop-1'}
-
-        binding = edtlib.Binding("test-bindings-include/allow-and-blocklist-multilevel.yaml",
-                                 fname2path)
-        assert set(binding.prop2specs.keys()) == {'x'}  # 'x' is allowed
-        child = binding.child_binding
-        assert set(child.prop2specs.keys()) == {'child-prop-1', 'child-prop-2',
-                                                'x', 'z'}  # root level 'y' is blocked
-
-def test_include_paths():
-    '''Test "last modified" semantic for included bindings paths.'''
-
-    fname2path = {'base.yaml': 'test-bindings-include/base.yaml',
-                  'modified.yaml': 'test-bindings-include/modified.yaml'}
-
-    with from_here():
-        top = edtlib.Binding('test-bindings-include/top.yaml', fname2path)
-
-        assert 'modified.yaml' == os.path.basename(top.prop2specs["x"].path)
-        assert 'base.yaml' == os.path.basename(top.prop2specs["y"].path)
-        assert 'top.yaml' == os.path.basename(top.prop2specs["p"].path)
-
-def test_include_filters_included_bindings():
-    '''Test filters set by including bindings.'''
-    fname2path = {'base.yaml': 'test-bindings-include/base.yaml',
-                  'inc-base.yaml': 'test-bindings-include/inc-base.yaml'}
-
-    with from_here():
-        top_allows = edtlib.Binding('test-bindings-include/top-allows.yaml', fname2path)
-    assert top_allows.prop2specs.get("x")
-    assert not top_allows.prop2specs.get("y")
-
-    with from_here():
-        top_blocks = edtlib.Binding('test-bindings-include/top-blocks.yaml', fname2path)
-    assert not top_blocks.prop2specs.get("x")
-    assert top_blocks.prop2specs.get("y")
-
-
 
 def test_bus():
     '''Test 'bus:' and 'on-bus:' in bindings'''
@@ -470,7 +356,7 @@ def test_child_binding():
 
     with from_here():
         binding_file = Path("test-bindings/child-binding.yaml").resolve()
-        top = edtlib.Binding(binding_file, {})
+        top = bindings.Binding(binding_file, {})
     child = top.child_binding
     assert Path(top.path) == binding_file
     assert Path(child.path) == binding_file
@@ -479,7 +365,7 @@ def test_child_binding():
 
     with from_here():
         binding_file = Path("test-bindings/child-binding-with-compat.yaml").resolve()
-        top = edtlib.Binding(binding_file, {})
+        top = bindings.Binding(binding_file, {})
     child = top.child_binding
     assert Path(top.path) == binding_file
     assert Path(child.path) == binding_file
@@ -758,22 +644,6 @@ def test_bad_compatible(tmp_path):
                  dts_file,
                  r"node '/foo' compatible 'no, whitespace' must match this regular expression: '^[a-zA-Z][a-zA-Z0-9,+\-._]+$'")
 
-def test_wrong_props():
-    '''Test Node.wrong_props (derived from DT and 'properties:' in the binding)'''
-
-    with from_here():
-        with pytest.raises(edtlib.EDTError) as e:
-            edtlib.Binding("test-wrong-bindings/wrong-specifier-space-type.yaml", None)
-        assert ("'specifier-space' in 'properties: wrong-type-for-specifier-space' has type 'phandle', expected 'phandle-array'"
-            in str(e.value))
-
-        with pytest.raises(edtlib.EDTError) as e:
-            edtlib.Binding("test-wrong-bindings/wrong-phandle-array-name.yaml", None)
-        value_str = str(e.value)
-        assert value_str.startswith("'wrong-phandle-array-name' in 'properties:'")
-        assert value_str.endswith("but no 'specifier-space' was provided.")
-
-
 def test_deepcopy():
     with from_here():
         # We intentionally use different kwarg values than the
@@ -847,7 +717,6 @@ def test_deepcopy():
         assert enode1 is not enode2
     assert edt_copy._dt is not edt._dt
 
-
 def verify_error(dts, dts_file, expected_err):
     # Verifies that parsing a file 'dts_file' with the contents 'dts'
     # (a string) raises an EDTError with the message 'expected_err'.
@@ -863,7 +732,6 @@ def verify_error(dts, dts_file, expected_err):
         edtlib.EDT(dts_file, [])
 
     assert str(e.value) == expected_err
-
 
 def verify_props(node, names, types, values):
     # Verifies that each property in 'names' has the expected
