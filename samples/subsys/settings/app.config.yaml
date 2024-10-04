@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# Sample NVS settings provisioning configuration.
+
+alpha:
+  schema: zephyr,sample-settings
+
+  angle:
+    1: 90
+
+  length:
+    1: 41
+    2: 58
+
+  beta:
+    voltage: 380
+    source: AC
+
+some:
+  other:
+    labeled_path:
+      schema: zephyr,sample-settings
+      gamma: 45
