@@ -45,8 +45,9 @@ import pickle
 import sys
 from collections import defaultdict
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'python-devicetree',
-                                'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-devicetree", "src")
+)
 
 ESCAPE_TABLE = str.maketrans(
     {

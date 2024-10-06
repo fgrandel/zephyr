@@ -22,8 +22,9 @@ import re
 import sys
 from typing import Iterable, NoReturn, Optional
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'python-devicetree',
-                                'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-devicetree", "src")
+)
 
 import edtlib_logger
 from devicetree import edtlib
