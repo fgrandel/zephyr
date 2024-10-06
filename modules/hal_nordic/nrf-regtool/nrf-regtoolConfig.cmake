@@ -13,7 +13,7 @@ function(nrf_regtool_generate_hex_from_dts peripheral)
   set(generated_hex_file ${PROJECT_BINARY_DIR}/${generated_hex_name})
   execute_process(
     COMMAND
-    ${CMAKE_COMMAND} -E env PYTHONPATH=${ZEPHYR_BASE}/scripts/lib/python-devicetree/src
+    ${CMAKE_COMMAND} -E env PYTHONPATH=${ZEPHYR_BASE}/scripts/lib/python-settings/src
     ${NRF_REGTOOL} ${verbosity} generate
     --peripheral ${peripheral}
     --svd-file ${SOC_SVD_FILE}

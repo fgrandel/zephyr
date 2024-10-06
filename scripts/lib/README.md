@@ -5,7 +5,7 @@ We may publishing these packages to PyPi now and then for access from external
 tools on an as-needed basis but for the moment being we won't maintain any
 specific release or milestone plan.
 
-# python-devicetree
+# python-settings
 
 We used to maintain the devicetree package in its own repository. But this
 effort has been given up.

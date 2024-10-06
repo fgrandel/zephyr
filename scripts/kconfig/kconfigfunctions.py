@@ -13,8 +13,9 @@ import sys
 from pathlib import Path
 
 ZEPHYR_BASE = str(Path(__file__).resolve().parents[2])
-sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts", "lib",
-                                "python-devicetree", "src"))
+sys.path.insert(
+    0, os.path.join(ZEPHYR_BASE, "scripts", "lib", "python-settings", "src")
+)
 
 # Types we support
 # 'string', 'int', 'hex', 'bool'

@@ -51,9 +51,7 @@ import sys
 
 sys.path.insert(
     0,
-    os.path.join(
-        os.environ["ZEPHYR_BASE"], "scripts", "lib", "python-devicetree", "src"
-    ),
+    os.path.join(os.environ["ZEPHYR_BASE"], "scripts", "lib", "python-settings", "src"),
 )
 
 

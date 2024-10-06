@@ -29,8 +29,9 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
 # This is needed to load edt.pickle files.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..",
-                                "lib", "python-devicetree", "src"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-settings", "src")
+)
 from devicetree import edtlib  # pylint: disable=unused-import
 
 # Prefix used for "struct device" reference initialized based on devicetree
