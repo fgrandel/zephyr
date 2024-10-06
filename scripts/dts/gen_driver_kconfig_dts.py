@@ -16,8 +16,9 @@ try:
 except ImportError:
     from yaml import SafeLoader     # type: ignore
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'python-devicetree',
-                                'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-devicetree", "src")
+)
 
 def binding_paths(bindings_dirs):
     # Returns a list with the paths to all bindings (.yaml files) in

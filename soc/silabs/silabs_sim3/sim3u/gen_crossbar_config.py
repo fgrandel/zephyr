@@ -50,7 +50,10 @@ import pickle
 import sys
 
 sys.path.insert(
-    0, os.path.join(os.environ["ZEPHYR_BASE"], "scripts/dts/python-devicetree/src")
+    0,
+    os.path.join(
+        os.environ["ZEPHYR_BASE"], "scripts", "lib", "python-devicetree", "src"
+    ),
 )
 
 

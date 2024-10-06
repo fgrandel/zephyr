@@ -35,7 +35,7 @@ from elf_parser import ZephyrElf
 
 # This is needed to load edt.pickle files.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..',
-                                'dts', 'python-devicetree', 'src'))
+                                'lib', 'python-devicetree', 'src'))
 
 def parse_args():
     global args

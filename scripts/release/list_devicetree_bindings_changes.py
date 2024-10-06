@@ -21,7 +21,7 @@ HERE = Path(__file__).parent.resolve()
 ZEPHYR_BASE = HERE.parent.parent
 SCRIPTS = ZEPHYR_BASE / 'scripts'
 
-sys.path.insert(0, str(SCRIPTS / 'dts' / 'python-devicetree' / 'src'))
+sys.path.insert(0, str(SCRIPTS / 'lib' / 'python-devicetree' / 'src'))
 
 from devicetree.edtlib import Binding, bindings_from_paths, load_vendor_prefixes_txt
 
