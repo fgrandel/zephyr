@@ -34,8 +34,9 @@ import pickle
 from elf_parser import ZephyrElf
 
 # This is needed to load edt.pickle files.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..',
-                                'lib', 'python-devicetree', 'src'))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-settings", "src")
+)
 
 def parse_args():
     global args

@@ -10,12 +10,12 @@ version = "0.1.0"
 setuptools.setup(
     author="The Zephyr Project, a Linux Foundation project",
     author_email="devel@lists.zephyrproject.org",
-    name="devicetree",
+    name="zephyr-settings",
     version=version,
-    description="Python library to parse and validate devicetree source files",
+    description="Python library to parse and validate devicetree source and YAML software configuration files",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/zephyrproject/zephyr/scripts/lib/python-devicetree",
+    url="https://github.com/zephyrproject/zephyr/scripts/lib/python-settings",
     package_dir={"": "src"},
     classifiers=[
         "Programming Language :: Python :: 3 :: Only",

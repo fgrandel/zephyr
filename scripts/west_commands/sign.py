@@ -23,7 +23,7 @@ from zcmake import CMakeCache
 from zephyr_ext_common import Forceable, ZEPHYR_SCRIPTS
 
 # This is needed to load edt.pickle files.
-sys.path.insert(0, str(ZEPHYR_SCRIPTS / 'lib' / 'python-devicetree' / 'src'))
+sys.path.insert(0, str(ZEPHYR_SCRIPTS / "lib" / "python-settings" / "src"))
 
 SIGN_DESCRIPTION = '''\
 This command automates some of the drudgery of creating signed Zephyr

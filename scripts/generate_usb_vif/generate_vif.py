@@ -20,7 +20,7 @@ from constants import vif_element_constants
 from constants import xml_constants
 
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "..")
-sys.path.insert(0, os.path.join(SCRIPTS_DIR, 'lib', 'python-devicetree', 'src'))
+sys.path.insert(0, os.path.join(SCRIPTS_DIR, "lib", "python-settings", "src"))
 
 
 def get_value_attribute(data):

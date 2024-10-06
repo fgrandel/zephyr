@@ -1,0 +1,7 @@
+dist/
+src/zephyr_settings.egg-info/
+build/
+zephyr_settings.egg-info/
+__pycache__/
+.tox/
+doc/build/

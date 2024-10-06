@@ -32,7 +32,7 @@ from zephyr_ext_common import ZEPHYR_SCRIPTS
 
 # Runners depend on edtlib. Make sure the copy in the tree is
 # available to them before trying to import any.
-sys.path.insert(0, str(ZEPHYR_SCRIPTS / 'lib' / 'python-devicetree' / 'src'))
+sys.path.insert(0, str(ZEPHYR_SCRIPTS / "lib" / "python-settings" / "src"))
 
 from runners import get_runner_cls, ZephyrBinaryRunner, MissingProgram
 from runners.core import RunnerConfig

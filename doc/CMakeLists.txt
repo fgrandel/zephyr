@@ -133,7 +133,7 @@ endif()
 add_custom_target(
   devicetree
   COMMAND ${CMAKE_COMMAND} -E env
-  PYTHONPATH=${ZEPHYR_BASE}/scripts/lib/python-devicetree/src${SEP}$ENV{PYTHONPATH}
+  PYTHONPATH=${ZEPHYR_BASE}/scripts/lib/python-settings/src${SEP}$ENV{PYTHONPATH}
   ZEPHYR_BASE=${ZEPHYR_BASE}
   ${PYTHON_EXECUTABLE} ${GEN_DEVICETREE_REST_SCRIPT}
     --vendor-prefixes ${ZEPHYR_BASE}/dts/bindings/vendor-prefixes.txt
