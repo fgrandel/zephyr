@@ -284,10 +284,10 @@ function(ExternalZephyrProject_Add)
     endif()
 
     # Check for overlay named <ZBUILD_APPLICATION>.overlay.
-    set(sysbuild_image_dts_overlay ${sysbuild_image_conf_dir}/${ZBUILD_APPLICATION}.overlay)
-    if (NOT ${ZBUILD_APPLICATION}_DTC_OVERLAY_FILE AND EXISTS ${sysbuild_image_dts_overlay})
-      set(${ZBUILD_APPLICATION}_DTC_OVERLAY_FILE ${sysbuild_image_dts_overlay}
-          CACHE INTERNAL "devicetree overlay file defined by main application"
+    set(sysbuild_image_settings_overlay ${sysbuild_image_conf_dir}/${ZBUILD_APPLICATION}.overlay)
+    if (NOT ${ZBUILD_APPLICATION}_SETTINGS_OVERLAY_FILES AND EXISTS ${sysbuild_image_settings_overlay})
+      set(${ZBUILD_APPLICATION}_SETTINGS_OVERLAY_FILES ${sysbuild_image_settings_overlay}
+          CACHE INTERNAL "settings overlay file(s) defined by main application"
       )
     endif()
   endif()

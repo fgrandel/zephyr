@@ -43,8 +43,8 @@ find_package(Dtc 1.4.6)
 #
 #    - The pre_dt module has been included; refer to its outcome
 #      section for more information on the consequences
-#    - DTS_SOURCE: set to the path to the devicetree file which
-#      was used, if one was provided or found
+#    - SETTINGS_FILES: set to the path(s) of the base devicetree and
+#      configuration files of the board.
 #    - ${BINARY_DIR_INCLUDE_GENERATED}/devicetree_generated.h exists
 #
 # 2. The following has happened if a devicetree was found and
@@ -59,12 +59,15 @@ find_package(Dtc 1.4.6)
 #    - ${KCONFIG_BINARY_DIR}/Kconfig.dts exists
 #    - DTS_INCLUDE_FILES is set to a ;-list of all devicetree files
 #      used in this build, including transitive includes (the build
-#      system will be regenerated if any of those files change)
+#      system will be regenerated if any of those files change
 #    - the devicetree extensions in the extensions.cmake module
 #      will be ready for use in other CMake list files that run
 #      after this module
 #
 # Required variables:
+# - SETTINGS_FILES: the devicetree and configuration source file(s)
+#   to use. The first file must be a DTS file (including the /dts-v1/ header);
+#   the rest must be .overlay files.
 # - BINARY_DIR_INCLUDE_GENERATED: where to put generated include files
 # - DTS_ROOT: a deduplicated list of places where devicetree
 #   implementation files (like bindings, vendor prefixes, etc.) are
@@ -75,26 +78,13 @@ find_package(Dtc 1.4.6)
 # - KCONFIG_BINARY_DIR: where to put generated Kconfig files
 #
 # Optional variables:
-# - BOARD: board name to use when looking for DTS_SOURCE
-# - BOARD_DIR: board directory to use when looking for DTS_SOURCE
-# - BOARD_REVISION_STRING: used when looking for a board revision's
-#   devicetree overlay file in BOARD_DIR
 # - CMAKE_DTS_PREPROCESSOR: the path to the preprocessor to use
 #   for devicetree files
-# - DTC_OVERLAY_FILE: list of devicetree overlay files which will be
-#   used to modify or extend the base devicetree.
-# - EXTRA_DTC_OVERLAY_FILE: list of extra devicetree overlay files.
-#   This variable is similar to DTC_OVERLAY_FILE but the files in
-#   EXTRA_DTC_OVERLAY_FILE will be applied after DTC_OVERLAY_FILE and
-#   thus files specified by EXTRA_DTC_OVERLAY_FILE have higher precedence.
 # - EXTRA_DTC_FLAGS: list of extra command line options to pass to
 #   dtc when using it to check for additional errors and warnings;
 #   invalid flags are automatically filtered out of the list
 # - DTS_EXTRA_CPPFLAGS: extra command line options to pass to the
 #   C preprocessor when generating the devicetree from DTS_SOURCE
-# - DTS_SOURCE: the devicetree source file to use may be pre-set
-#   with this variable; otherwise, it defaults to
-#   ${BOARD_DIR}/${BOARD}.dts
 #
 # Variables set by this module and not mentioned above are for internal
 # use only, and may be removed, renamed, or re-purposed without prior notice.
@@ -116,6 +106,7 @@ set(DEVICETREE_GENERATED_H      ${BINARY_DIR_INCLUDE_GENERATED}/devicetree_gener
 # Generated build system internals.
 set(DTS_POST_CPP                ${PROJECT_BINARY_DIR}/zephyr.dts.pre)
 set(DTS_DEPS                    ${PROJECT_BINARY_DIR}/zephyr.dts.d)
+set(CONFIG_POST_CPP             ${PROJECT_BINARY_DIR}/zephyr.settings.pre.yaml)
 
 # This generates DT information needed by the Kconfig APIs.
 set(GEN_DRIVER_KCONFIG_SCRIPT   ${DT_SCRIPTS}/gen_driver_kconfig_dts.py)
@@ -133,84 +124,26 @@ set(DTS_CMAKE                   ${PROJECT_BINARY_DIR}/dts.cmake)
 # modules.
 set(VENDOR_PREFIXES             dts/bindings/vendor-prefixes.txt)
 
-if(NOT DEFINED DTS_SOURCE)
-  zephyr_build_string(board_string SHORT shortened_board_string
-                      BOARD ${BOARD} BOARD_QUALIFIERS ${BOARD_QUALIFIERS}
-  )
-  if(EXISTS ${BOARD_DIR}/${shortened_board_string}.dts AND NOT BOARD_${BOARD}_SINGLE_SOC)
-    message(FATAL_ERROR "Board ${ZFILE_BOARD} defines multiple SoCs.\nShortened file name "
-            "(${shortened_board_string}.dts) not allowed, use '<board>_<soc>.dts' naming"
-    )
-  elseif(EXISTS ${BOARD_DIR}/${board_string}.dts AND EXISTS ${BOARD_DIR}/${shortened_board_string}.dts)
-    message(FATAL_ERROR "Conflicting file names discovered. Cannot use both "
-            "${board_string}.dts and ${shortened_board_string}.dts. "
-            "Please choose one naming style, ${board_string}.dts is recommended."
-    )
-  elseif(EXISTS ${BOARD_DIR}/${board_string}.dts)
-    set(DTS_SOURCE ${BOARD_DIR}/${board_string}.dts)
-  elseif(EXISTS ${BOARD_DIR}/${shortened_board_string}.dts)
-    set(DTS_SOURCE ${BOARD_DIR}/${shortened_board_string}.dts)
-  endif()
-endif()
-
-if(EXISTS ${DTS_SOURCE})
-  # We found a devicetree. Append all relevant dts overlays we can find...
-  zephyr_file(CONF_FILES ${BOARD_DIR} DTS DTS_SOURCE)
-
-  zephyr_file(
-    CONF_FILES ${BOARD_DIR}
-    DTS no_rev_suffix_dts_board_overlays
-    BOARD ${BOARD}
-    BOARD_QUALIFIERS ${BOARD_QUALIFIERS}
-  )
-
-  # ...but remove the ones that do not include the revision suffix
-  list(REMOVE_ITEM DTS_SOURCE ${no_rev_suffix_dts_board_overlays})
-else()
-  # If we don't have a devicetree, provide an empty stub
-  set(DTS_SOURCE ${ZEPHYR_BASE}/boards/common/stub.dts)
-endif()
-
-#
-# Find all the DTS files we need to concatenate and preprocess, as
-# well as all the devicetree bindings and vendor prefixes associated
-# with them.
-#
-
-zephyr_file(CONF_FILES ${BOARD_EXTENSION_DIRS} DTS board_extension_dts_files)
-
-set(dts_files
-  ${DTS_SOURCE}
-  ${board_extension_dts_files}
-  ${shield_dts_files}
-  )
-
-if(DTC_OVERLAY_FILE)
-  zephyr_list(TRANSFORM DTC_OVERLAY_FILE NORMALIZE_PATHS
-              OUTPUT_VARIABLE DTC_OVERLAY_FILE_AS_LIST)
+if(NOT DEFINED SETTINGS_FILES OR SETTINGS_FILES STREQUAL "")
+  message(FATAL_ERROR "SETTINGS_FILES must be defined")
   build_info(devicetree user-files PATH ${DTC_OVERLAY_FILE_AS_LIST})
-  list(APPEND
-    dts_files
-    ${DTC_OVERLAY_FILE_AS_LIST}
-    )
 endif()
 
-if(EXTRA_DTC_OVERLAY_FILE)
-  zephyr_list(TRANSFORM EXTRA_DTC_OVERLAY_FILE NORMALIZE_PATHS
-              OUTPUT_VARIABLE EXTRA_DTC_OVERLAY_FILE_AS_LIST)
+zephyr_list(TRANSFORM SETTINGS_FILES NORMALIZE_PATHS
+            OUTPUT_VARIABLE SETTINGS_FILES_AS_LIST)
   build_info(devicetree extra-user-files PATH ${EXTRA_DTC_OVERLAY_FILE_AS_LIST})
-  list(APPEND
-    dts_files
-    ${EXTRA_DTC_OVERLAY_FILE_AS_LIST}
-    )
-endif()
 
 set(i 0)
-foreach(dts_file ${dts_files})
+foreach(settings_file IN ITEMS ${SETTINGS_FILES_AS_LIST})
   if(i EQUAL 0)
-    message(STATUS "Found BOARD.dts: ${dts_file}")
+    message(STATUS "Found BOARD.dts: ${settings_file}")
+    list(APPEND DTS_SETTINGS_FILES ${settings_file})
+  elseif(settings_file MATCHES "\.ya?ml$")
+    message(STATUS "Found configuration overlay: ${settings_file}")
+    list(APPEND CONFIG_SETTINGS_FILES ${settings_file})
   else()
-    message(STATUS "Found devicetree overlay: ${dts_file}")
+    message(STATUS "Found devicetree overlay: ${settings_file}")
+    list(APPEND DTS_SETTINGS_FILES ${settings_file})
   endif()
 
   math(EXPR i "${i}+1")
@@ -254,8 +187,17 @@ else()
 endif()
 zephyr_dt_preprocess(
   CPP ${dts_preprocessor}
-  SOURCE_FILES ${dts_files}
+  SOURCE_FILES ${DTS_SETTINGS_FILES}
   OUT_FILE ${DTS_POST_CPP}
+  DEPS_FILE ${DTS_DEPS}
+  EXTRA_CPPFLAGS ${DTS_EXTRA_CPPFLAGS}
+  INCLUDE_DIRECTORIES ${DTS_ROOT_SYSTEM_INCLUDE_DIRS}
+  WORKING_DIRECTORY ${APPLICATION_SOURCE_DIR}
+  )
+zephyr_dt_preprocess(
+  CPP ${dts_preprocessor}
+  SOURCE_FILES ${CONFIG_SETTINGS_FILES}
+  OUT_FILE ${CONFIG_POST_CPP}
   DEPS_FILE ${DTS_DEPS}
   EXTRA_CPPFLAGS ${DTS_EXTRA_CPPFLAGS}
   INCLUDE_DIRECTORIES ${DTS_ROOT_SYSTEM_INCLUDE_DIRS}
