@@ -19,7 +19,7 @@ tests:
     extra_configs:
       - CONFIG_ZERO_LATENCY_IRQS=y
     extra_args:
-      DTC_OVERLAY_FILE="boards/nrf52840dk_nrf52840.overlay;boards/nrf52840dk_nrf52840_zli.overlay"
+      SETTINGS_OVERLAY_FILES="boards/nrf52840dk_nrf52840.overlay;boards/nrf52840dk_nrf52840_zli.overlay"
   drivers.counter.basic_api.stm32_subsec:
     tags:
       - drivers
@@ -40,4 +40,4 @@ tests:
     platform_allow: mimxrt685_evk/mimxrt685s/cm33
     timeout: 400
     extra_args:
-      DTC_OVERLAY_FILE="boards/mimxrt685_evk_rtc_1khz.overlay"
+      SETTINGS_OVERLAY_FILES="boards/mimxrt685_evk_rtc_1khz.overlay"

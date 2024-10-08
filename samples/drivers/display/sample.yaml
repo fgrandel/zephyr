@@ -104,7 +104,7 @@ tests:
   sample.display.mipi_dbi:
     platform_allow:
       - da1469x_dk_pro
-    extra_args: DTC_OVERLAY_FILE="da1469x_dk_pro_mipi_dbi.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="da1469x_dk_pro_mipi_dbi.overlay"
     tags:
       - display
       - mipi_dbi
@@ -115,7 +115,7 @@ tests:
     platform_allow:
       - native_posix
       - native_sim
-    extra_args: DTC_OVERLAY_FILE="dummy_dc.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="dummy_dc.overlay"
     extra_configs:
       - CONFIG_DUMMY_DISPLAY=y
       - CONFIG_SDL_DISPLAY=n

@@ -20,7 +20,7 @@ tests:
       - CONFIG_PLIC_SHELL=y
   drivers.interrupt_controller.intc_plic.multi_instance.build:
     extra_args:
-      DTC_OVERLAY_FILE="./app.multi_instance.overlay"
+      SETTINGS_OVERLAY_FILES="./app.multi_instance.overlay"
     extra_configs:
       - CONFIG_NUM_IRQS=116
       - CONFIG_MAX_IRQ_PER_AGGREGATOR=52

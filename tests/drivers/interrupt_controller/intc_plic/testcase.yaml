@@ -9,6 +9,6 @@ tests:
   drivers.interrupt_controller.intc_plic: {}
   drivers.interrupt_controller.intc_plic.alt_mapping:
     extra_args:
-      DTC_OVERLAY_FILE="./alt_mapping.overlay"
+      SETTINGS_OVERLAY_FILES="./alt_mapping.overlay"
     extra_configs:
       - CONFIG_TEST_INTC_PLIC_ALT_MAPPING=y

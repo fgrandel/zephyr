@@ -237,11 +237,11 @@ passed to CMake.
 
 .. _west-building-dtc-overlay-file:
 
-To set :ref:`DTC_OVERLAY_FILE <important-build-vars>` to
+To set :ref:`SETTINGS_OVERLAY_FILES <important-build-vars>` to
 :file:`enable-modem.overlay`, using that file as a
 :ref:`devicetree overlay <dt-guide>`::
 
-  west build -b reel_board -- -DDTC_OVERLAY_FILE=enable-modem.overlay
+  west build -b reel_board -- -DSETTINGS_OVERLAY_FILES=enable-modem.overlay
 
 To merge the :file:`file.conf` Kconfig fragment into your build's
 :file:`.config`::

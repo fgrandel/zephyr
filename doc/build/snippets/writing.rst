@@ -28,7 +28,7 @@ this:
 
    name: foo
    append:
-     EXTRA_DTC_OVERLAY_FILE: foo.overlay
+     EXTRA_SETTINGS_OVERLAY_FILES: foo.overlay
      EXTRA_CONF_FILE: foo.conf
 
 Namespacing
@@ -135,7 +135,7 @@ This :file:`snippet.yml` adds :file:`foo.overlay` to the build:
 
    name: foo
    append:
-     EXTRA_DTC_OVERLAY_FILE: foo.overlay
+     EXTRA_SETTINGS_OVERLAY_FILES: foo.overlay
 
 The path to :file:`foo.overlay` is relative to the directory containing
 :file:`snippet.yml`.
@@ -190,10 +190,10 @@ By name
    boards:
      bar: # settings for board "bar" go here
        append:
-         EXTRA_DTC_OVERLAY_FILE: bar.overlay
+         EXTRA_SETTINGS_OVERLAY_FILES: bar.overlay
      baz: # settings for board "baz" go here
        append:
-         EXTRA_DTC_OVERLAY_FILE: baz.overlay
+         EXTRA_SETTINGS_OVERLAY_FILES: baz.overlay
 
 The above example uses :file:`bar.overlay` when building for board ``bar``, and
 :file:`baz.overlay` when building for ``baz``.
@@ -216,7 +216,7 @@ For example:
    boards:
      /my_vendor_.*/:
        append:
-         EXTRA_DTC_OVERLAY_FILE: my_vendor.overlay
+         EXTRA_SETTINGS_OVERLAY_FILES: my_vendor.overlay
 
 The above example uses devicetree overlay :file:`my_vendor.overlay` when
 building for either board ``my_vendor_board1`` or ``my_vendor_board2``. It

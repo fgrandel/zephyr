@@ -29,7 +29,7 @@ tests:
       - nrf54h20dk/nrf54h20/cpuapp
     extra_args:
       mbox_SNIPPET=nordic-ppr
-      mbox_EXTRA_DTC_OVERLAY_FILE="boards/nrf54h20dk_nrf54h20_cpuapp_cpuppr.overlay"
+      mbox_EXTRA_SETTINGS_OVERLAY_FILES="boards/nrf54h20dk_nrf54h20_cpuapp_cpuppr.overlay"
       SB_CONF_FILE=sysbuild/nrf54h20dk_nrf54h20_cpuppr.conf
     sysbuild: true
     harness: console
@@ -47,7 +47,7 @@ tests:
       - nrf54h20dk/nrf54h20/cpuapp
     extra_args:
       mbox_SNIPPET=nordic-flpr
-      mbox_EXTRA_DTC_OVERLAY_FILE="boards/nrf54h20dk_nrf54h20_cpuapp_cpuflpr.overlay"
+      mbox_EXTRA_SETTINGS_OVERLAY_FILES="boards/nrf54h20dk_nrf54h20_cpuapp_cpuflpr.overlay"
       SB_CONF_FILE=sysbuild/nrf54h20dk_nrf54h20_cpuflpr.conf
     sysbuild: true
     harness: console

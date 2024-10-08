@@ -3730,7 +3730,7 @@ Addressed issues
 * :github:`38450` - Python script for checking PR errors
 * :github:`38346` - twister command line parameter clean up and optimizate twister documents
 * :github:`38291` - Make Zephyr modules compatible with PlatformIO libdeps
-* :github:`38251` - cmake: DTC_OVERLAY_FILE flags cancel board <board>.overlay files
+* :github:`38251` - cmake: SETTINGS_OVERLAY_FILES flags cancel board <board>.overlay files
 * :github:`38041` - Logging-related tests fails on qemu_arc_hs6x
 * :github:`37855` - STM32 - kconfigs to determine if peripheral is available
 * :github:`37346` - STM32WL LoRa increased the current in "suspend_to_idle" state

@@ -27,7 +27,7 @@ tests:
     tags: ci_build
     extra_args:
       - OVERLAY_CONFIG=overlay-usb-nrf-br.conf
-      - DTC_OVERLAY_FILE="usb.overlay"
+      - SETTINGS_OVERLAY_FILES="usb.overlay"
   sample.openthread.coprocessor.rcp:
     build_only: true
     platform_allow:

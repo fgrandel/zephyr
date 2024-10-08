@@ -11,7 +11,7 @@ tests:
     filter: dt_compat_enabled("sbs,sbs-charger")
     extra_args:
       CONF_FILE="prj.conf;boards/emulated_board.conf"
-      DTC_OVERLAY_FILE="boards/emulated_board.overlay"
+      SETTINGS_OVERLAY_FILES="boards/emulated_board.overlay"
     platform_exclude:
       - qemu_cortex_a53
       - qemu_cortex_a53/qemu_cortex_a53/smp
@@ -32,4 +32,4 @@ tests:
       - xenvm/xenvm/gicv3
     extra_args:
       CONF_FILE="prj.conf;boards/qemu_cortex_a53.conf"
-      DTC_OVERLAY_FILE="boards/qemu_cortex_a53.overlay"
+      SETTINGS_OVERLAY_FILES="boards/qemu_cortex_a53.overlay"

@@ -14,13 +14,13 @@ devices found.
 Building and Running
 ********************
 
-Set DTC_OVERLAY_FILE to "ds2484.overlay" or "w1_serial.overlay" in order to
+Set SETTINGS_OVERLAY_FILES to "ds2484.overlay" or "w1_serial.overlay" in order to
 enable and configure the drivers.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/drivers/w1/scanner
    :board: nrf52840dk/nrf52840
-   :gen-args: -DDTC_OVERLAY_FILE=w1_serial.overlay
+   :gen-args: -DSETTINGS_OVERLAY_FILES=w1_serial.overlay
    :goals: build flash
    :compact:
 

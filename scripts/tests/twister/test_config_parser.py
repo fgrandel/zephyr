@@ -37,12 +37,16 @@ def test_no_fields_to_extract():
 
 
 def test_missing_fields():
-    target_fields = {"CONF_FILE", "OVERLAY_CONFIG", "DTC_OVERLAY_FILE"}
+    target_fields = {"CONF_FILE", "OVERLAY_CONFIG", "SETTINGS_OVERLAY_FILES"}
     arg_list = "arg1 arg2 arg3"
     extracted_fields, other_fields = extract_fields_from_arg_list(
         target_fields, arg_list)
 
-    assert extracted_fields == {"CONF_FILE": [], "OVERLAY_CONFIG": [], "DTC_OVERLAY_FILE": []}
+    assert extracted_fields == {
+        "CONF_FILE": [],
+        "OVERLAY_CONFIG": [],
+        "SETTINGS_OVERLAY_FILES": [],
+    }
     assert other_fields == ["arg1", "arg2", "arg3" ]
 
 def test_load_yaml_with_extra_args_and_retrieve_scenario_data(zephyr_base):
@@ -94,40 +98,43 @@ def test_default_values(zephyr_base):
         parser = TwisterConfigParser(filename, loaded_schema)
         parser.load()
 
-    expected_scenario_data = { 'type': 'integration',
-        'extra_args': [],
-        'extra_configs': [],
-        'extra_conf_files': [],
-        'extra_overlay_confs': [],
-        'extra_dtc_overlay_files': [],
-        'required_snippets': [],
-        'build_only': False,
-        'build_on_all': False,
-        'skip': False, 'slow': False,
-        'timeout': 60,
-        'min_ram': 8,
-        'modules': [],
-        'depends_on': set(),
-        'min_flash': 32,
-        'arch_allow': set(),
-        'arch_exclude': set(),
-        'extra_sections': [],
-        'integration_platforms': [],
-        'ignore_faults': False,
-        'ignore_qemu_crash': False,
-        'testcases': [],
-        'platform_type': [],
-        'platform_exclude': set(),
-        'platform_allow': set(),
-        'platform_key': [],
-        'toolchain_exclude': set(),
-        'toolchain_allow': set(),
-        'filter': '',
-        'levels': [],
-        'harness': 'test',
-        'harness_config': {},
-        'seed': 0, 'sysbuild': False
-        }
+    expected_scenario_data = {
+        "type": "integration",
+        "extra_args": [],
+        "extra_configs": [],
+        "extra_conf_files": [],
+        "extra_overlay_confs": [],
+        "extra_settings_overlay_files": [],
+        "required_snippets": [],
+        "build_only": False,
+        "build_on_all": False,
+        "skip": False,
+        "slow": False,
+        "timeout": 60,
+        "min_ram": 8,
+        "modules": [],
+        "depends_on": set(),
+        "min_flash": 32,
+        "arch_allow": set(),
+        "arch_exclude": set(),
+        "extra_sections": [],
+        "integration_platforms": [],
+        "ignore_faults": False,
+        "ignore_qemu_crash": False,
+        "testcases": [],
+        "platform_type": [],
+        "platform_exclude": set(),
+        "platform_allow": set(),
+        "platform_key": [],
+        "toolchain_exclude": set(),
+        "toolchain_allow": set(),
+        "filter": "",
+        "levels": [],
+        "harness": "test",
+        "harness_config": {},
+        "seed": 0,
+        "sysbuild": False,
+    }
 
     assert expected_scenario_data.items() <= expected_scenario_data.items()
 

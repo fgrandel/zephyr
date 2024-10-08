@@ -393,7 +393,7 @@ should know about.
 .. note::
 
    The variables :makevar:`BOARD`, :makevar:`CONF_FILE`, and
-   :makevar:`DTC_OVERLAY_FILE` can be supplied to the build system in
+   :makevar:`SETTINGS_OVERLAY_FILES` can be supplied to the build system in
    3 ways (in order of precedence):
 
    * As a parameter to the ``west build`` or ``cmake`` invocation via the
@@ -424,15 +424,15 @@ should know about.
   can be useful in order to leave :makevar:`CONF_FILE` at its default value,
   but "mix in" some additional configuration options.
 
-* :makevar:`DTC_OVERLAY_FILE`: One or more devicetree overlay files to use.
+* :makevar:`SETTINGS_OVERLAY_FILES`: One or more devicetree overlay files to use.
   Multiple files can be separated with semicolons.
   See :ref:`set-devicetree-overlays` for examples and :ref:`devicetree-intro`
   for information about devicetree and Zephyr.
 
-* :makevar:`EXTRA_DTC_OVERLAY_FILE`: Additional devicetree overlay files to use.
-  Multiple files can be separated with semicolons. This can be useful to leave
-  :makevar:`DTC_OVERLAY_FILE` at its default value, but "mix in" some additional
-  overlay files.
+* :makevar:`EXTRA_SETTINGS_OVERLAY_FILES`: Additional devicetree overlay files to use.
+  Multiple files can be separated with semicolons or spaces. This can be useful
+  to leave :makevar:`SETTINGS_OVERLAY_FILES` at its default value, but "mix in"
+  some additional overlay files.
 
 * :makevar:`SHIELD`: see :ref:`shields`
 
@@ -445,8 +445,8 @@ should know about.
 * :makevar:`EXTRA_ZEPHYR_MODULES`: Like :makevar:`ZEPHYR_MODULES`, except these
   will be added to the list of modules found via west, instead of replacing it.
 
-* :makevar:`FILE_SUFFIX`: Optional suffix for filenames that will be added to Kconfig
-  fragments and devicetree overlays (if these files exists, otherwise will fallback to
+* :makevar:`FILE_SUFFIX`: Optional suffix for filenames that will be added to Kconfig,
+  devicetree and configuration files (if these files exist, otherwise will fallback to
   the name without the prefix). See :ref:`application-file-suffixes` for details.
 
 .. note::
@@ -508,7 +508,7 @@ Make sure to follow these steps in order.
    See :ref:`initial-conf` for more information.
 
 #. If your application uses devicetree overlays, you may need to set
-   :ref:`DTC_OVERLAY_FILE <important-build-vars>`.
+   :ref:`SETTINGS_OVERLAY_FILES <important-build-vars>`.
    See :ref:`set-devicetree-overlays`.
 
 #. If your application has its own kernel configuration options,
@@ -615,7 +615,7 @@ Application Configuration Directory
 Zephyr will use configuration files from the application's configuration
 directory except for files with an absolute path provided by the arguments
 described earlier, for example ``CONF_FILE``, ``EXTRA_CONF_FILE``,
-``DTC_OVERLAY_FILE``, and ``EXTRA_DTC_OVERLAY_FILE``.
+``SETTINGS_OVERLAY_FILES``, and ``EXTRA_SETTINGS_OVERLAY_FILES``.
 
 The application configuration directory is defined by the
 ``APPLICATION_CONFIG_DIR`` variable.

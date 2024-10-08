@@ -23,7 +23,7 @@ tests:
       - native_sim
     extra_args:
       - CONF_FILE="prj_native_ram.conf"
-      - EXTRA_DTC_OVERLAY_FILE="ramdisk.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="ramdisk.overlay"
   filesystem.fat.api.reentrant:
     platform_allow:
       - native_sim

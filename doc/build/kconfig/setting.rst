@@ -175,8 +175,8 @@ configuration files have been applied.
 
 All configuration files will be taken from the application's configuration
 directory except for files with an absolute path that are given with the
-``CONF_FILE``, ``EXTRA_CONF_FILE``, ``DTC_OVERLAY_FILE``, and
-``EXTRA_DTC_OVERLAY_FILE`` arguments.  For these,
+``CONF_FILE``, ``EXTRA_CONF_FILE``, ``SETTINGS_OVERLAY_FILES``, and
+``EXTRA_SETTINGS_OVERLAY_FILES`` arguments.  For these,
 a file in a Zephyr module can be referred by escaping the Zephyr module dir
 variable like this ``\${ZEPHYR_<module>_MODULE_DIR}/<path-to>/<file>``
 when setting any of said variables in the application's :file:`CMakeLists.txt`.

@@ -9,7 +9,7 @@ tests:
     filter: dt_compat_enabled("sbs,sbs-gauge-new-api")
     extra_args:
       - CONF_FILE="prj.conf;boards/emulated_board.conf"
-      - DTC_OVERLAY_FILE="boards/emulated_board.overlay"
+      - SETTINGS_OVERLAY_FILES="boards/emulated_board.overlay"
     platform_exclude:
       - hifive_unmatched
       - qemu_cortex_a53
@@ -40,14 +40,14 @@ tests:
       - qemu_cortex_a53
     extra_args:
       - CONF_FILE="prj.conf;boards/qemu_cortex_a53.conf"
-      - DTC_OVERLAY_FILE="boards/qemu_cortex_a53.overlay"
+      - SETTINGS_OVERLAY_FILES="boards/qemu_cortex_a53.overlay"
   drivers.fuel_gauge.sbs_gauge_new_api.emulated.cutoff:
     tags:
       - drivers
       - fuel_gauge
     filter: dt_compat_enabled("sbs,sbs-gauge-new-api")
     extra_args:
-      - DTC_OVERLAY_FILE="boards/emulated_board_cutoff.overlay"
+      - SETTINGS_OVERLAY_FILES="boards/emulated_board_cutoff.overlay"
     extra_configs:
       - CONFIG_EMUL=y
       - CONFIG_TEST_SBS_CUTOFF_EXTENSION=y

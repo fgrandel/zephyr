@@ -4,7 +4,7 @@ append:
 boards:
   /.*/nrf54h20/cpuapp/:
     append:
-      EXTRA_DTC_OVERLAY_FILE: boards/nrf54h20_cpuapp.overlay
+      EXTRA_SETTINGS_OVERLAY_FILES: boards/nrf54h20_cpuapp.overlay
   /.*/nrf54h20/cpurad/:
     append:
-      EXTRA_DTC_OVERLAY_FILE: boards/nrf54h20_cpurad.overlay
+      EXTRA_SETTINGS_OVERLAY_FILES: boards/nrf54h20_cpurad.overlay

@@ -5,7 +5,7 @@ common:
   platform_allow:
     - qemu_x86
     - native_sim
-  extra_args: DTC_OVERLAY_FILE="uart_emul.overlay"
+  extra_args: SETTINGS_OVERLAY_FILES="uart_emul.overlay"
   harness: ztest
 tests:
   drivers.uart.emul.polling: {}

@@ -52,7 +52,7 @@ schema;scenario-schema:
       required: false
       sequence:
         - type: str
-    "extra_dtc_overlay_files":
+    "extra_settings_overlay_files":
       type: seq
       required: false
       sequence:

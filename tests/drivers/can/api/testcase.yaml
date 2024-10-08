@@ -13,7 +13,7 @@ tests:
     extra_configs:
       - CONFIG_CAN_ACCEPT_RTR=y
   drivers.can.api.twai:
-    extra_args: DTC_OVERLAY_FILE=twai-enable.overlay
+    extra_args: SETTINGS_OVERLAY_FILES=twai-enable.overlay
     filter: dt_compat_enabled("espressif,esp32-twai")
     platform_allow:
       - esp32_devkitc_wroom/esp32/procpu

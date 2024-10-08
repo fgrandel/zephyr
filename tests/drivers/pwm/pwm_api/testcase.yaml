@@ -13,7 +13,7 @@ tests:
       - drivers
       - pwm
       - userspace
-    extra_args: DTC_OVERLAY_FILE="boards/frdm_ke1xz_flexio_pwm.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="boards/frdm_ke1xz_flexio_pwm.overlay"
     platform_allow:
       - frdm_ke17z
       - frdm_ke17z512

@@ -20,12 +20,12 @@ tests:
   sample.usbd.hid-keyboard.out-report:
     tags: usb
     extra_args:
-      - EXTRA_DTC_OVERLAY_FILE="out_report.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="out_report.overlay"
   sample.usbd.hid-keyboard.large-report:
     tags: usb
     extra_args:
-      - EXTRA_DTC_OVERLAY_FILE="large_in_report.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="large_in_report.overlay"
   sample.usbd.hid-keyboard.large-out-report:
     tags: usb
     extra_args:
-      - EXTRA_DTC_OVERLAY_FILE="large_out_report.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="large_out_report.overlay"

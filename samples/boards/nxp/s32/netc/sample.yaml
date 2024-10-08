@@ -11,5 +11,5 @@ tests:
   sample.boards.nxp_s32.netc.psi:
     harness: net
   sample.boards.nxp_s32.netc.vsi_and_psi:
-    extra_args: DTC_OVERLAY_FILE="./vsi-and-psi.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="./vsi-and-psi.overlay"
     harness: net

@@ -42,44 +42,45 @@ class TwisterConfigParser:
     """Class to read testsuite yaml files with semantic checking
     """
 
-    testsuite_valid_keys = {"tags": {"type": "set", "required": False},
-                       "type": {"type": "str", "default": "integration"},
-                       "extra_args": {"type": "list"},
-                       "extra_configs": {"type": "list"},
-                       "extra_conf_files": {"type": "list", "default": []},
-                       "extra_overlay_confs" : {"type": "list", "default": []},
-                       "extra_dtc_overlay_files": {"type": "list", "default": []},
-                       "required_snippets": {"type": "list"},
-                       "build_only": {"type": "bool", "default": False},
-                       "build_on_all": {"type": "bool", "default": False},
-                       "skip": {"type": "bool", "default": False},
-                       "slow": {"type": "bool", "default": False},
-                       "timeout": {"type": "int", "default": 60},
-                       "min_ram": {"type": "int", "default": 8},
-                       "modules": {"type": "list", "default": []},
-                       "depends_on": {"type": "set"},
-                       "min_flash": {"type": "int", "default": 32},
-                       "arch_allow": {"type": "set"},
-                       "arch_exclude": {"type": "set"},
-                       "extra_sections": {"type": "list", "default": []},
-                       "integration_platforms": {"type": "list", "default": []},
-                       "ignore_faults": {"type": "bool", "default": False },
-                       "ignore_qemu_crash": {"type": "bool", "default": False },
-                       "testcases": {"type": "list", "default": []},
-                       "platform_type": {"type": "list", "default": []},
-                       "platform_exclude": {"type": "set"},
-                       "platform_allow": {"type": "set"},
-                       "platform_key": {"type": "list", "default": []},
-                       "simulation_exclude": {"type": "list", "default": []},
-                       "toolchain_exclude": {"type": "set"},
-                       "toolchain_allow": {"type": "set"},
-                       "filter": {"type": "str"},
-                       "levels": {"type": "list", "default": []},
-                       "harness": {"type": "str", "default": "test"},
-                       "harness_config": {"type": "map", "default": {}},
-                       "seed": {"type": "int", "default": 0},
-                       "sysbuild": {"type": "bool", "default": False}
-                       }
+    testsuite_valid_keys = {
+        "tags": {"type": "set", "required": False},
+        "type": {"type": "str", "default": "integration"},
+        "extra_args": {"type": "list"},
+        "extra_configs": {"type": "list"},
+        "extra_conf_files": {"type": "list", "default": []},
+        "extra_overlay_confs": {"type": "list", "default": []},
+        "extra_settings_overlay_files": {"type": "list", "default": []},
+        "required_snippets": {"type": "list"},
+        "build_only": {"type": "bool", "default": False},
+        "build_on_all": {"type": "bool", "default": False},
+        "skip": {"type": "bool", "default": False},
+        "slow": {"type": "bool", "default": False},
+        "timeout": {"type": "int", "default": 60},
+        "min_ram": {"type": "int", "default": 8},
+        "modules": {"type": "list", "default": []},
+        "depends_on": {"type": "set"},
+        "min_flash": {"type": "int", "default": 32},
+        "arch_allow": {"type": "set"},
+        "arch_exclude": {"type": "set"},
+        "extra_sections": {"type": "list", "default": []},
+        "integration_platforms": {"type": "list", "default": []},
+        "ignore_faults": {"type": "bool", "default": False},
+        "ignore_qemu_crash": {"type": "bool", "default": False},
+        "testcases": {"type": "list", "default": []},
+        "platform_type": {"type": "list", "default": []},
+        "platform_exclude": {"type": "set"},
+        "platform_allow": {"type": "set"},
+        "platform_key": {"type": "list", "default": []},
+        "simulation_exclude": {"type": "list", "default": []},
+        "toolchain_exclude": {"type": "set"},
+        "toolchain_allow": {"type": "set"},
+        "filter": {"type": "str"},
+        "levels": {"type": "list", "default": []},
+        "harness": {"type": "str", "default": "test"},
+        "harness_config": {"type": "map", "default": {}},
+        "seed": {"type": "int", "default": 0},
+        "sysbuild": {"type": "bool", "default": False},
+    }
 
     def __init__(self, filename, schema):
         """Instantiate a new TwisterConfigParser object
@@ -165,7 +166,7 @@ class TwisterConfigParser:
             type conversion and default values filled in per valid_keys
         """
 
-        # "CONF_FILE", "OVERLAY_CONFIG", and "DTC_OVERLAY_FILE" fields from each
+        # "CONF_FILE", "OVERLAY_CONFIG", and "SETTINGS_OVERLAY_FILES" fields from each
         # of the extra_args lines
         extracted_common = {}
         extracted_testsuite = {}
@@ -175,7 +176,7 @@ class TwisterConfigParser:
             if k == "extra_args":
                 # Pull out these fields and leave the rest
                 extracted_common, d[k] = extract_fields_from_arg_list(
-                    {"CONF_FILE", "OVERLAY_CONFIG", "DTC_OVERLAY_FILE"}, v
+                    {"CONF_FILE", "OVERLAY_CONFIG", "SETTINGS_OVERLAY_FILES"}, v
                 )
             else:
                 # Copy common value to avoid mutating it with test specific values below
@@ -185,13 +186,16 @@ class TwisterConfigParser:
             if k == "extra_args":
                 # Pull out these fields and leave the rest
                 extracted_testsuite, v = extract_fields_from_arg_list(
-                    {"CONF_FILE", "OVERLAY_CONFIG", "DTC_OVERLAY_FILE"}, v
+                    {"CONF_FILE", "OVERLAY_CONFIG", "SETTINGS_OVERLAY_FILES"}, v
                 )
             if k in d:
                 if k == "filter":
                     d[k] = "(%s) and (%s)" % (d[k], v)
-                elif k not in ("extra_conf_files", "extra_overlay_confs",
-                               "extra_dtc_overlay_files"):
+                elif k not in (
+                    "extra_conf_files",
+                    "extra_overlay_confs",
+                    "extra_settings_overlay_files",
+                ):
                     if isinstance(d[k], str) and isinstance(v, list):
                         d[k] = d[k].split() + v
                     elif isinstance(d[k], list) and isinstance(v, str):
@@ -224,20 +228,21 @@ class TwisterConfigParser:
             extracted_testsuite.get("OVERLAY_CONFIG", []) + \
             self.scenarios[name].get("extra_overlay_confs", [])
 
-        d["extra_dtc_overlay_files"] = \
-            extracted_common.get("DTC_OVERLAY_FILE", []) + \
-            self.common.get("extra_dtc_overlay_files", []) + \
-            extracted_testsuite.get("DTC_OVERLAY_FILE", []) + \
-            self.scenarios[name].get("extra_dtc_overlay_files", [])
+        d["extra_settings_overlay_files"] = (
+            extracted_common.get("SETTINGS_OVERLAY_FILES", [])
+            + self.common.get("extra_settings_overlay_files", [])
+            + extracted_testsuite.get("SETTINGS_OVERLAY_FILES", [])
+            + self.scenarios[name].get("extra_settings_overlay_files", [])
+        )
 
         if any({len(x) > 0 for x in extracted_common.values()}) or \
            any({len(x) > 0 for x in extracted_testsuite.values()}):
             warnings.warn(
-                "Do not specify CONF_FILE, OVERLAY_CONFIG, or DTC_OVERLAY_FILE "
+                "Do not specify CONF_FILE, OVERLAY_CONFIG, or SETTINGS_OVERLAY_FILES "
                 "in extra_args. This feature is deprecated and will soon "
                 "result in an error. Use extra_conf_files, extra_overlay_confs "
-                "or extra_dtc_overlay_files YAML fields instead",
-                DeprecationWarning
+                "or extra_settings_overlay_files YAML fields instead",
+                DeprecationWarning,
             )
 
         for k, kinfo in self.testsuite_valid_keys.items():
