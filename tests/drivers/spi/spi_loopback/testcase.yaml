@@ -36,12 +36,12 @@ tests:
   drivers.spi.mcux_dspi_dma.loopback:
     extra_args:
       - EXTRA_CONF_FILE="overlay-mcux-dspi-dma.conf"
-      - DTC_OVERLAY_FILE="overlay-mcux-dspi-dma.overlay"
+      - SETTINGS_OVERLAY_FILES="overlay-mcux-dspi-dma.overlay"
     platform_allow: frdm_k64f
   drivers.spi.sam_spi_dma.loopback:
     extra_args:
       - EXTRA_CONF_FILE="overlay-sam-spi-dma.conf"
-      - DTC_OVERLAY_FILE="overlay-sam-spi-dma.overlay"
+      - SETTINGS_OVERLAY_FILES="overlay-sam-spi-dma.overlay"
     platform_allow:
       - sam_e70_xplained/same70q21
       - sam_v71_xult/samv71q21
@@ -51,7 +51,7 @@ tests:
   drivers.spi.stm32_spi_16bits_frames.loopback:
     extra_args:
       - EXTRA_CONF_FILE="overlay-stm32-spi-16bits.conf"
-      - DTC_OVERLAY_FILE="overlay-stm32-spi-16bits.overlay"
+      - SETTINGS_OVERLAY_FILES="overlay-stm32-spi-16bits.overlay"
     filter: CONFIG_SOC_FAMILY_STM32
     platform_allow:
       - nucleo_h743zi
@@ -92,7 +92,7 @@ tests:
   drivers.spi.stm32_spi_16bits_frames_dma.loopback:
     extra_args:
       - EXTRA_CONF_FILE="overlay-stm32-spi-16bits-dma.conf"
-      - DTC_OVERLAY_FILE="overlay-stm32-spi-16bits.overlay"
+      - SETTINGS_OVERLAY_FILES="overlay-stm32-spi-16bits.overlay"
     filter: CONFIG_SOC_FAMILY_STM32
     platform_allow:
       - nucleo_h743zi
@@ -102,7 +102,7 @@ tests:
   drivers.spi.stm32_spi_16bits_frames_dma_dt_nocache_mem.loopback:
     extra_args:
       - EXTRA_CONF_FILE="overlay-stm32-spi-16bits-dma-dt-nocache-mem.conf"
-      - DTC_OVERLAY_FILE="overlay-stm32-spi-16bits.overlay"
+      - SETTINGS_OVERLAY_FILES="overlay-stm32-spi-16bits.overlay"
     filter: CONFIG_SOC_FAMILY_STM32 and CONFIG_CPU_HAS_DCACHE
     platform_allow:
       - nucleo_h743zi
@@ -172,30 +172,30 @@ tests:
       - CONFIG_DMA=y
     platform_allow: rpi_pico
   drivers.spi.pl022_spi_dma_no_dma_props.loopback:
-    extra_args: DTC_OVERLAY_FILE="boards/rpi_pico_delete_dma_props.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="boards/rpi_pico_delete_dma_props.overlay"
     extra_configs:
       - CONFIG_SPI_PL022_INTERRUPT=n
       - CONFIG_SPI_PL022_DMA=y
       - CONFIG_DMA=y
     platform_allow: rpi_pico
   drivers.spi.pl022_spi_dma_and_interrupt_no_dma_props.loopback:
-    extra_args: DTC_OVERLAY_FILE="boards/rpi_pico_delete_dma_props.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="boards/rpi_pico_delete_dma_props.overlay"
     extra_configs:
       - CONFIG_SPI_PL022_INTERRUPT=y
       - CONFIG_SPI_PL022_DMA=y
       - CONFIG_DMA=y
     platform_allow: rpi_pico
   drivers.spi.mcux_flexio_spi.loopback:
-    extra_args: DTC_OVERLAY_FILE="overlay-mcux-flexio-spi.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="overlay-mcux-flexio-spi.overlay"
     filter: CONFIG_DT_HAS_NXP_FLEXIO_ENABLED and
             CONFIG_DT_HAS_NXP_FLEXIO_SPI_ENABLED
     platform_allow: mimxrt1064_evk
   drivers.spi.nrf_fast:
-    extra_args: DTC_OVERLAY_FILE="boards/nrf54h20dk_nrf54h20_cpuapp_fast.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="boards/nrf54h20dk_nrf54h20_cpuapp_fast.overlay"
     platform_allow:
       - nrf54h20dk/nrf54h20/cpuapp
   drivers.spi.ke1xz_flexio_spi.loopback:
-    extra_args: DTC_OVERLAY_FILE="boards/frdm_ke1xz_flexio_spi.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="boards/frdm_ke1xz_flexio_spi.overlay"
     filter: CONFIG_DT_HAS_NXP_FLEXIO_ENABLED and
             CONFIG_DT_HAS_NXP_FLEXIO_SPI_ENABLED
     platform_allow:

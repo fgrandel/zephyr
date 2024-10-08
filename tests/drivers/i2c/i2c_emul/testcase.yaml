@@ -12,6 +12,6 @@ tests:
       - native_sim
     extra_configs:
       - CONFIG_I2C_TARGET_BUFFER_MODE=y
-    extra_dtc_overlay_files:
+    extra_settings_overlay_files:
       - "boards/native_sim.overlay"
       - "boards/native_sim.buf.overlay"

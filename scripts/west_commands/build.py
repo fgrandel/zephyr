@@ -163,13 +163,18 @@ class Build(Forceable):
                            Do not use this option with manually specified
                            -DEXTRA_CONF_FILE... cmake arguments: the results are
                            undefined''')
-        group.add_argument('--extra-dtc-overlay', dest='extra_dtc_overlay_files',
-                           metavar='EXTRA_DTC_OVERLAY_FILE', action='append', default=[],
-                           help='''add the argument to EXTRA_DTC_OVERLAY_FILE; may be given
+        group.add_argument(
+            "--extra-settings-overlay",
+            dest="extra_settings_overlay_files",
+            metavar="EXTRA_SETTINGS_OVERLAY_FILES",
+            action="append",
+            default=[],
+            help="""add the argument to EXTRA_SETTINGS_OVERLAY_FILES; may be given
                            multiple times. Forces CMake to run again if given.
                            Do not use this option with manually specified
-                           -DEXTRA_DTC_OVERLAY_FILE... cmake arguments: the results are
-                           undefined''')
+                           -DEXTRA_SETTINGS_OVERLAY_FILES... cmake arguments: the results are
+                           undefined""",
+        )
 
         group = parser.add_mutually_exclusive_group()
         group.add_argument('--sysbuild', action='store_true',
@@ -241,10 +246,15 @@ class Build(Forceable):
                 self.run_cmake = True
             else:
                 self._update_cache()
-                if (self.args.cmake or self.args.cmake_opts or
-                        self.args.cmake_only or self.args.snippets or
-                        self.args.shields or self.args.extra_conf_files or
-                        self.args.extra_dtc_overlay_files):
+                if (
+                    self.args.cmake
+                    or self.args.cmake_opts
+                    or self.args.cmake_only
+                    or self.args.snippets
+                    or self.args.shields
+                    or self.args.extra_conf_files
+                    or self.args.extra_settings_overlay_files
+                ):
                     self.run_cmake = True
         else:
             self.run_cmake = True
@@ -336,7 +346,7 @@ class Build(Forceable):
             item = tests.get(test_item)
 
             sysbuild = False
-            extra_dtc_overlay_files = []
+            extra_settings_overlay_files = []
             extra_overlay_confs = []
             extra_conf_files = []
             required_snippets = []
@@ -345,13 +355,13 @@ class Build(Forceable):
                     continue
                 sysbuild = section.get('sysbuild', sysbuild)
                 for data in [
-                        'extra_args',
-                        'extra_configs',
-                        'extra_conf_files',
-                        'extra_overlay_confs',
-                        'extra_dtc_overlay_files',
-                        'required_snippets'
-                        ]:
+                    "extra_args",
+                    "extra_configs",
+                    "extra_conf_files",
+                    "extra_overlay_confs",
+                    "extra_settings_overlay_files",
+                    "required_snippets",
+                ]:
                     extra = section.get(data)
                     if not extra:
                         continue
@@ -374,8 +384,8 @@ class Build(Forceable):
                     elif data == 'extra_overlay_confs':
                         extra_overlay_confs.extend(arg_list)
                         continue
-                    elif data == 'extra_dtc_overlay_files':
-                        extra_dtc_overlay_files.extend(arg_list)
+                    elif data == "extra_settings_overlay_files":
+                        extra_settings_overlay_files.extend(arg_list)
                         continue
                     elif data == 'required_snippets':
                         required_snippets.extend(arg_list)
@@ -393,8 +403,10 @@ class Build(Forceable):
             if extra_conf_files:
                 args.append(f"CONF_FILE=\"{';'.join(extra_conf_files)}\"")
 
-            if extra_dtc_overlay_files:
-                args.append(f"DTC_OVERLAY_FILE=\"{';'.join(extra_dtc_overlay_files)}\"")
+            if extra_settings_overlay_files:
+                args.append(
+                    f"SETTINGS_OVERLAY_FILES=\"{';'.join(extra_settings_overlay_files)}\""
+                )
 
             if extra_overlay_confs:
                 args.append(f"OVERLAY_CONFIG=\"{';'.join(extra_overlay_confs)}\"")
@@ -609,10 +621,10 @@ class Build(Forceable):
             cmake_opts.append(f'-DSHIELD={";".join(self.args.shields)}')
         if self.args.extra_conf_files:
             cmake_opts.append(f'-DEXTRA_CONF_FILE={";".join(self.args.extra_conf_files)}')
-        if self.args.extra_dtc_overlay_files:
+        if self.args.extra_settings_overlay_files:
             cmake_opts.append(
-                f'-DEXTRA_DTC_OVERLAY_FILE='
-                f'{";".join(self.args.extra_dtc_overlay_files)}'
+                f"-DEXTRA_SETTINGS_OVERLAY_FILES="
+                f'{";".join(self.args.extra_settings_overlay_files)}'
             )
 
         user_args = config_get('cmake-args', None)

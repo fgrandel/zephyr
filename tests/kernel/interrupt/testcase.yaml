@@ -82,6 +82,6 @@ tests:
   arch.interrupt.multilevel:
     filter: CONFIG_MULTI_LEVEL_INTERRUPTS
     extra_args:
-      - EXTRA_DTC_OVERLAY_FILE="multilevel_irq.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="multilevel_irq.overlay"
     extra_configs:
       - CONFIG_TEST_MULTILEVEL_IRQ=y

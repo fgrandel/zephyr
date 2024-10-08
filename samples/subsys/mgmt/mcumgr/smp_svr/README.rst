@@ -116,7 +116,7 @@ Zephyr. The ``smp_svr`` sample comes in different flavours.
             samples/subsys/mgmt/mcumgr/smp_svr \
             -- \
             -DEXTRA_CONF_FILE=overlay-cdc.conf \
-            -DDTC_OVERLAY_FILE=usb.overlay
+            -DSETTINGS_OVERLAY_FILES=usb.overlay
 
    .. group-tab:: Shell
 

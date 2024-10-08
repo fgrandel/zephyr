@@ -43,7 +43,7 @@ tests:
       - posix
     extra_args:
       - EXTRA_CONF_FILE="overlay-bt.conf"
-      - DTC_OVERLAY_FILE="bt.overlay"
+      - SETTINGS_OVERLAY_FILES="bt.overlay"
 
   sample.logger.usermode:
     integration_platforms:

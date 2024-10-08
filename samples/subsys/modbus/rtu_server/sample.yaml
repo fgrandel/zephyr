@@ -32,5 +32,5 @@ tests:
             dt_enabled_alias_with_parent_compat("led2", "gpio-leds")
     extra_args:
       - EXTRA_CONF_FILE="overlay-cdc-acm.conf"
-      - DTC_OVERLAY_FILE="cdc-acm.overlay"
+      - SETTINGS_OVERLAY_FILES="cdc-acm.overlay"
     depends_on: usb_device

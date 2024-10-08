@@ -115,15 +115,17 @@ def test_projectbuilder_cmake_assemble_args_single(m):
         ["cmake1=foo", "cmake2=bar"],
         "/builddir/",
     ) == [
-        "-DCONFIG_t=\"test\"",
-        "-Dcmake1=foo", "-Dcmake2=bar",
-        "-Dbasearg1", "-DSNIPPET_t=test",
-        "-Dhandler_arg1", "-Dhandler_arg2",
+        '-DCONFIG_t="test"',
+        "-Dcmake1=foo",
+        "-Dcmake2=bar",
+        "-Dbasearg1",
+        "-DSNIPPET_t=test",
+        "-Dhandler_arg1",
+        "-Dhandler_arg2",
         "-DCONF_FILE=a.conf;b.conf;c.conf",
-        "-DDTC_OVERLAY_FILE=x.overlay;y.overlay;z.overlay",
-        "-DOVERLAY_CONFIG=extra_overlay.conf "
-        "/builddir/twister/testsuite_extra.conf",
-    ])
+        "-DSETTINGS_OVERLAY_FILES=x.overlay;y.overlay;z.overlay",
+        "-DOVERLAY_CONFIG=extra_overlay.conf " "/builddir/twister/testsuite_extra.conf",
+    ]
 
 
 def test_if_default_binaries_are_taken_properly(project_builder: ProjectBuilder):
@@ -2071,28 +2073,31 @@ def test_projectbuilder_cmake_assemble_args():
     handler = mock.Mock(ready=True, args=['dummy_handler'])
     extra_conf_files = ['extrafile1.conf', 'extrafile2.conf']
     extra_overlay_confs = ['extra_overlay_conf']
-    extra_dtc_overlay_files = ['overlay1.dtc', 'overlay2.dtc']
+    extra_settings_overlay_files = ["overlay1.dtc", "overlay2.dtc"]
     cmake_extra_args = ['CMAKE1="yes"', 'CMAKE2=n']
     build_dir = os.path.join('build', 'dir')
 
     with mock.patch('os.path.exists', return_value=True):
-        results = ProjectBuilder.cmake_assemble_args(extra_args, handler,
-                                                     extra_conf_files,
-                                                     extra_overlay_confs,
-                                                     extra_dtc_overlay_files,
-                                                     cmake_extra_args,
-                                                     build_dir)
+        results = ProjectBuilder.cmake_assemble_args(
+            extra_args,
+            handler,
+            extra_conf_files,
+            extra_overlay_confs,
+            extra_settings_overlay_files,
+            cmake_extra_args,
+            build_dir,
+        )
 
     expected_results = [
-        '-DCONFIG_FOO=y',
-        '-DCMAKE1=\"yes\"',
-        '-DCMAKE2=n',
-        '-DDUMMY_EXTRA=yes',
-        '-Ddummy_handler',
-        '-DCONF_FILE=extrafile1.conf;extrafile2.conf',
-        '-DDTC_OVERLAY_FILE=overlay1.dtc;overlay2.dtc',
-        f'-DOVERLAY_CONFIG=extra_overlay_conf ' \
-        f'{os.path.join("build", "dir", "twister", "testsuite_extra.conf")}'
+        "-DCONFIG_FOO=y",
+        '-DCMAKE1="yes"',
+        "-DCMAKE2=n",
+        "-DDUMMY_EXTRA=yes",
+        "-Ddummy_handler",
+        "-DCONF_FILE=extrafile1.conf;extrafile2.conf",
+        "-DSETTINGS_OVERLAY_FILES=overlay1.dtc;overlay2.dtc",
+        f"-DOVERLAY_CONFIG=extra_overlay_conf "
+        f'{os.path.join("build", "dir", "twister", "testsuite_extra.conf")}',
     ]
 
     assert results == expected_results
@@ -2111,7 +2116,7 @@ def test_projectbuilder_cmake():
     pb.testsuite.extra_args = ['some', 'platform:frdm_k64f:args']
     pb.testsuite.extra_conf_files = ['some', 'files1']
     pb.testsuite.extra_overlay_confs = ['some', 'files2']
-    pb.testsuite.extra_dtc_overlay_files = ['some', 'files3']
+    pb.testsuite.extra_settings_overlay_files = ["some", "files3"]
     pb.options.extra_args = ['other', 'args']
     pb.cmake_assemble_args = mock.Mock(return_value=['dummy'])
     cmake_res_mock = mock.Mock()
@@ -2125,9 +2130,9 @@ def test_projectbuilder_cmake():
         pb.instance.handler,
         pb.testsuite.extra_conf_files,
         pb.testsuite.extra_overlay_confs,
-        pb.testsuite.extra_dtc_overlay_files,
+        pb.testsuite.extra_settings_overlay_files,
         pb.options.extra_args,
-        pb.instance.build_dir
+        pb.instance.build_dir,
     )
     pb.run_cmake.assert_called_once_with(['dummy'], ['dummy filter'])
 

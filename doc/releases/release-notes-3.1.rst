@@ -1333,7 +1333,7 @@ Addressed issues
 * :github:`45851` - For native_posix programs, k_yield doesn't yield to k_msleep threads
 * :github:`45839` - Bluetooth: Controller: df: Possible memory overwrite if requested number of CTE is greater than allowed by configuration
 * :github:`45836` - samples: Bluetooth: unicast_audio_server invalid check for ISO flags
-* :github:`45834` - SMP Server Sample needs ``-DDTC_OVERLAY_FILE=usb.overlay`` for CDC_ACM
+* :github:`45834` - SMP Server Sample needs ``-DSETTINGS_OVERLAY_FILES=usb.overlay`` for CDC_ACM
 * :github:`45828` - mcumgr: img_mgmt_dfu_stopped is called on a successful erase
 * :github:`45827` - bluetooth: bluetooth host: Adding the same device to resolving list
 * :github:`45826` - Bluetooth: controller: Assert in lll.c when executing LL/CON/INI/BV-28-C

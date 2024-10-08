@@ -16,13 +16,13 @@ tests:
     min_ram: 32
     platform_allow: titanium_ti60_f225
     depends_on: gpio
-    extra_args: DTC_OVERLAY_FILE="efinix_sapphire.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="efinix_sapphire.overlay"
 
   drivers.gpio.build.altera_pio:
     min_ram: 32
     platform_allow: niosv_m niosv_g
     depends_on: gpio
-    extra_args: DTC_OVERLAY_FILE="altera.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="altera.overlay"
 
   drivers.gpio.build.adc_ads1145s0x_gpio:
     min_ram: 32
@@ -36,7 +36,7 @@ tests:
       - adc
       - spi
     extra_args:
-      - DTC_OVERLAY_FILE="adc_ads1145s0x_gpio.overlay"
+      - SETTINGS_OVERLAY_FILES="adc_ads1145s0x_gpio.overlay"
     extra_configs:
       - CONFIG_ADC=y
       - CONFIG_ADC_INIT_PRIORITY=80
@@ -52,7 +52,7 @@ tests:
       - adc
       - spi
     extra_args:
-      - DTC_OVERLAY_FILE="adc_lmp90xxx_gpio.overlay"
+      - SETTINGS_OVERLAY_FILES="adc_lmp90xxx_gpio.overlay"
     extra_configs:
       - CONFIG_ADC=y
       - CONFIG_ADC_INIT_PRIORITY=80
@@ -61,4 +61,4 @@ tests:
   drivers.gpio.build.iproc:
     platform_allow: qemu_cortex_m3
     depends_on: gpio
-    extra_args: DTC_OVERLAY_FILE="iproc.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="iproc.overlay"

@@ -222,18 +222,18 @@ Set devicetree overlays
 ***********************
 
 Devicetree overlays are explained in :ref:`devicetree-intro`. The CMake
-variable :makevar:`DTC_OVERLAY_FILE` contains a space- or semicolon-separated
-list of overlay files to use. If :makevar:`DTC_OVERLAY_FILE` specifies multiple
+variable :makevar:`SETTINGS_OVERLAY_FILES` contains a space- or semicolon-separated
+list of overlay files to use. If :makevar:`SETTINGS_OVERLAY_FILES` specifies multiple
 files, they are included in that order by the C preprocessor.  A file in a
 Zephyr module can be referred to by escaping the Zephyr module dir variable
 like ``\${ZEPHYR_<module>_MODULE_DIR}/<path-to>/dts.overlay``
-when setting the DTC_OVERLAY_FILE variable.
+when setting the SETTINGS_OVERLAY_FILES variable.
 
-You can set :makevar:`DTC_OVERLAY_FILE` to contain exactly the files you want
+You can set :makevar:`SETTINGS_OVERLAY_FILES` to contain exactly the files you want
 to use. Here is an :ref:`example <west-building-dtc-overlay-file>` using
 ``west build``.
 
-If you don't set :makevar:`DTC_OVERLAY_FILE`, the build system will follow
+If you don't set :makevar:`SETTINGS_OVERLAY_FILES`, the build system will follow
 these steps, looking for files in your application configuration directory to
 use as devicetree overlays:
 
@@ -247,25 +247,25 @@ use as devicetree overlays:
    system will stop looking for more files.
 #. Otherwise, if :file:`app.overlay` exists, it will be used.
 
-Extra devicetree overlays may be provided using ``EXTRA_DTC_OVERLAY_FILE`` which
+Extra devicetree overlays may be provided using ``EXTRA_SETTINGS_OVERLAY_FILES`` which
 will still allow the build system to automatically use devicetree overlays
 described in the above steps.
 
-The build system appends overlays specified in ``EXTRA_DTC_OVERLAY_FILE``
-to the overlays in ``DTC_OVERLAY_FILE`` when processing devicetree overlays.
-This means that changes made via ``EXTRA_DTC_OVERLAY_FILE`` have higher
-precedence than those made via ``DTC_OVERLAY_FILE``.
+The build system appends overlays specified in ``EXTRA_SETTINGS_OVERLAY_FILES``
+to the overlays in ``SETTINGS_OVERLAY_FILES`` when processing devicetree overlays.
+This means that changes made via ``EXTRA_SETTINGS_OVERLAY_FILES`` have higher
+precedence than those made via ``SETTINGS_OVERLAY_FILES``.
 
 All configuration files will be taken from the application's configuration
 directory except for files with an absolute path that are given with the
-``DTC_OVERLAY_FILE`` or ``EXTRA_DTC_OVERLAY_FILE`` argument.
+``SETTINGS_OVERLAY_FILES`` or ``EXTRA_SETTINGS_OVERLAY_FILES`` argument.
 
 See :ref:`Application Configuration Directory <application-configuration-directory>`
 on how the application configuration directory is defined.
 
 Using :ref:`shields` will also add devicetree overlay files.
 
-The :makevar:`DTC_OVERLAY_FILE` value is stored in the CMake cache and used
+The :makevar:`SETTINGS_OVERLAY_FILES` value is stored in the CMake cache and used
 in successive builds.
 
 The :ref:`build system <build_overview>` prints all the devicetree overlays it

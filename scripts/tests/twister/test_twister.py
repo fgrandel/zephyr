@@ -63,13 +63,16 @@ def test_testsuite_config_files():
         scenario = data.get_scenario("test_config.main")
         assert scenario
 
-        # CONF_FILE, DTC_OVERLAY_FILE, OVERLAY_CONFIG fields should be stripped out
+        # CONF_FILE, SETTINGS_OVERLAY_FILES, OVERLAY_CONFIG fields should be stripped out
         # of extra_args. Other fields should remain untouched.
-        warn_mock.assert_called_once_with("Do not specify CONF_FILE, OVERLAY_CONFIG, or "
-                                          "DTC_OVERLAY_FILE in extra_args. This feature is "
-                                          "deprecated and will soon result in an error. Use "
-                                          "extra_conf_files, extra_overlay_confs or "
-                                          "extra_dtc_overlay_files YAML fields instead", DeprecationWarning)
+        warn_mock.assert_called_once_with(
+            "Do not specify CONF_FILE, OVERLAY_CONFIG, or "
+            "SETTINGS_OVERLAY_FILES in extra_args. This feature is "
+            "deprecated and will soon result in an error. Use "
+            "extra_conf_files, extra_overlay_confs or "
+            "extra_settings_overlay_files YAML fields instead",
+            DeprecationWarning,
+        )
 
     assert scenario["extra_args"] == ["UNRELATED1=abc", "UNRELATED2=xyz"]
 
@@ -78,8 +81,10 @@ def test_testsuite_config_files():
         "conf1;conf2;conf3;conf4;conf5;conf6;conf7;conf8"
 
     # Check that all DTC overlay files have been assembled in the correct order
-    assert ";".join(scenario["extra_dtc_overlay_files"]) == \
-        "overlay1;overlay2;overlay3;overlay4;overlay5;overlay6;overlay7;overlay8"
+    assert (
+        ";".join(scenario["extra_settings_overlay_files"])
+        == "overlay1;overlay2;overlay3;overlay4;overlay5;overlay6;overlay7;overlay8"
+    )
 
     # Check that all overlay conf files have been assembled in the correct order
     assert scenario["extra_overlay_confs"] == \

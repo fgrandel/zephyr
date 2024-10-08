@@ -17,4 +17,4 @@ common:
 tests:
   logging.backend.fs.automounted: {}
   logging.backend.fs.manualmounted:
-    extra_args: EXTRA_DTC_OVERLAY_FILE="automount.overlay"
+    extra_args: EXTRA_SETTINGS_OVERLAY_FILES="automount.overlay"

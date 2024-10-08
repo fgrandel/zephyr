@@ -1,7 +1,7 @@
 tests:
   bluetooth.bt_crypto:
     extra_args:
-      - EXTRA_DTC_OVERLAY_FILE="test.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="test.overlay"
     platform_allow:
       - native_sim
       - native_sim/native/64
@@ -13,7 +13,7 @@ tests:
   bluetooth.bt_crypto.psa:
     filter: CONFIG_PSA_CRYPTO_CLIENT
     extra_args:
-      - EXTRA_DTC_OVERLAY_FILE="test.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="test.overlay"
     platform_allow:
       - native_sim
       - native_sim/native/64

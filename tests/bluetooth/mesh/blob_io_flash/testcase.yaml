@@ -1,7 +1,7 @@
 tests:
   bluetooth.mesh.blob_io_flash:
     extra_args:
-      - EXTRA_DTC_OVERLAY_FILE="test.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="test.overlay"
     platform_allow:
       - native_sim
     tags:

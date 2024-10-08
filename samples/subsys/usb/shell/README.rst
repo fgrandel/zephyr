@@ -41,7 +41,7 @@ the platform has already defined or not ``zephyr_uhc0`` or ``zephyr_udc0`` nodel
 .. zephyr-app-commands::
    :zephyr-app: samples/subsys/usb/shell
    :board: nrf52840dk/nrf52840
-   :gen-args: -DEXTRA_CONF_FILE=virtual.conf -DDTC_OVERLAY_FILE=virtual.overlay
+   :gen-args: -DEXTRA_CONF_FILE=virtual.conf -DSETTINGS_OVERLAY_FILES=virtual.overlay
    :goals: flash
    :compact:
 

@@ -43,7 +43,7 @@ tests:
   bluetooth.shell.cdc_acm:
     extra_args:
       - OVERLAY_CONFIG=cdc_acm.conf
-      - DTC_OVERLAY_FILE="usb.overlay"
+      - SETTINGS_OVERLAY_FILES="usb.overlay"
     depends_on: usb_device
     platform_allow:
       - native_sim
@@ -407,7 +407,7 @@ tests:
     build_only: true
     extra_args:
       - EXTRA_CONF_FILE=snippets/xterm-native-shell/xterm-native-shell.conf
-      - EXTRA_DTC_OVERLAY_FILE=snippets/xterm-native-shell/xterm-native-shell.overlay
+      - EXTRA_SETTINGS_OVERLAY_FILES=snippets/xterm-native-shell/xterm-native-shell.overlay
     platform_allow:
       - nrf52_bsim
     integration_platforms:

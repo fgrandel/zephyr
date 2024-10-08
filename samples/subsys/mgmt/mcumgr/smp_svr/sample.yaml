@@ -33,7 +33,7 @@ tests:
   sample.mcumgr.smp_svr.cdc:
     extra_args:
       - EXTRA_CONF_FILE="overlay-cdc.conf"
-      - DTC_OVERLAY_FILE="usb.overlay"
+      - SETTINGS_OVERLAY_FILES="usb.overlay"
     platform_allow:
       - nrf52833dk/nrf52820
       - nrf52833dk/nrf52833

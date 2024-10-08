@@ -12,14 +12,14 @@ tests:
     platform_allow: nrf52840dk/nrf52840
     extra_args:
       - EXTRA_CONF_FILE=boards/nrf52840dk_nrf52840_qspi_nor.conf
-      - DTC_OVERLAY_FILE=boards/nrf52840_size_in_bytes.overlay
+      - SETTINGS_OVERLAY_FILES=boards/nrf52840_size_in_bytes.overlay
     integration_platforms:
       - nrf52840dk/nrf52840
   drivers.flash.common.nrf_qspi_nor_4B_addr:
     platform_allow: nrf52840dk/nrf52840
     extra_args:
       - EXTRA_CONF_FILE=boards/nrf52840dk_nrf52840_qspi_nor.conf
-      - DTC_OVERLAY_FILE=boards/nrf52840dk_mx25l51245g.overlay
+      - SETTINGS_OVERLAY_FILES=boards/nrf52840dk_mx25l51245g.overlay
     harness_config:
       fixture: external_flash_mx25l51245g
     integration_platforms:
@@ -72,7 +72,7 @@ tests:
     platform_allow: nrf52840dk/nrf52840
     extra_args:
       - EXTRA_CONF_FILE=boards/nrf52840dk_flash_spi.conf
-      - DTC_OVERLAY_FILE=boards/nrf52840dk_mx25r_high_perf.overlay
+      - SETTINGS_OVERLAY_FILES=boards/nrf52840dk_mx25r_high_perf.overlay
     integration_platforms:
       - nrf52840dk/nrf52840
   drivers.flash.common.mr_canhubk3_sfdp_runtime:
@@ -83,14 +83,14 @@ tests:
     platform_allow: nrf52840dk/nrf52840
     extra_args:
       - EXTRA_CONF_FILE=boards/nrf52840dk_flash_spi.conf
-      - DTC_OVERLAY_FILE=boards/nrf52840dk_spi_nor.overlay
+      - SETTINGS_OVERLAY_FILES=boards/nrf52840dk_spi_nor.overlay
     harness_config:
       fixture: external_flash_mx25v1635f
   drivers.flash.common.spi_nor_wp_hold:
     platform_allow: nrf52840dk/nrf52840
     extra_args:
       - EXTRA_CONF_FILE=boards/nrf52840dk_flash_spi.conf
-      - DTC_OVERLAY_FILE=boards/nrf52840dk_spi_nor_wp_hold.overlay
+      - SETTINGS_OVERLAY_FILES=boards/nrf52840dk_spi_nor_wp_hold.overlay
     harness_config:
       fixture: external_flash_mx25v1635f
   drivers.flash.common.sam0:

@@ -64,7 +64,7 @@ their purpose clear. Overlays adapt the base devicetree for different purposes:
 
 The build system automatically picks up :file:`.overlay` files stored in
 certain locations. It is also possible to explicitly list the overlays to
-include, via the :makevar:`DTC_OVERLAY_FILE` CMake variable. See
+include, via the :makevar:`SETTINGS_OVERLAY_FILES` CMake variable. See
 :ref:`set-devicetree-overlays` for details.
 
 The build system combines :file:`BOARD.dts` and any :file:`.overlay` files by

@@ -8,7 +8,7 @@ tests:
       - hifive_unmatched
       - bl5340_dvk/nrf5340/cpuapp
     extra_args:
-      - EXTRA_DTC_OVERLAY_FILE="ramdisk_small.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="ramdisk_small.overlay"
 
   filesystem.ext2.big:
     platform_allow:
@@ -16,7 +16,7 @@ tests:
       - native_sim/native/64
     extra_args:
       - CONF_FILE=prj_big.conf
-      - EXTRA_DTC_OVERLAY_FILE="ramdisk_big.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="ramdisk_big.overlay"
 
   filesystem.ext2.sdcard:
     simulation_exclude:

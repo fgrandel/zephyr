@@ -17,7 +17,7 @@ tests:
   drivers.eeprom.api.w_at2x_emul:
     # Tests overwrite EEPROM content, only run on select boards
     extra_args:
-      - DTC_OVERLAY_FILE=at2x_emul.overlay
+      - SETTINGS_OVERLAY_FILES=at2x_emul.overlay
       - EXTRA_CONF_FILE=at2x_emul.conf
     platform_allow:
       - native_sim

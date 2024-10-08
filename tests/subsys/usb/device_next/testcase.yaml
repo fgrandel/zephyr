@@ -11,5 +11,5 @@ tests:
     tags: usb
     extra_args:
       - CONF_FILE="build_all.conf"
-      - EXTRA_DTC_OVERLAY_FILE="build_all.overlay"
+      - EXTRA_SETTINGS_OVERLAY_FILES="build_all.overlay"
     build_only: true

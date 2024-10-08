@@ -115,7 +115,7 @@ tests:
   bluetooth.init.test_ctlr_dbg:
     extra_args:
       - CONF_FILE=prj_ctlr_dbg.conf
-      - DTC_OVERLAY_FILE=pa_lna.overlay
+      - SETTINGS_OVERLAY_FILES=pa_lna.overlay
     platform_allow:
       - nrf52840dk/nrf52840
       - nrf52dk/nrf52832
@@ -125,7 +125,7 @@ tests:
   bluetooth.init.test_ctlr_5_x_dbg:
     extra_args:
       - CONF_FILE=prj_ctlr_5_x_dbg.conf
-      - DTC_OVERLAY_FILE=pa_lna.overlay
+      - SETTINGS_OVERLAY_FILES=pa_lna.overlay
     platform_allow:
       - nrf52840dk/nrf52840
       - nrf52dk/nrf52832
@@ -328,12 +328,12 @@ tests:
   bluetooth.init.test_h5:
     extra_args:
       - CONF_FILE=prj_h5.conf
-      - DTC_OVERLAY_FILE=h5.overlay
+      - SETTINGS_OVERLAY_FILES=h5.overlay
     platform_allow: qemu_cortex_m3
   bluetooth.init.test_h5_dbg:
     extra_args:
       - CONF_FILE=prj_h5_dbg.conf
-      - DTC_OVERLAY_FILE=h5.overlay
+      - SETTINGS_OVERLAY_FILES=h5.overlay
     platform_allow: qemu_cortex_m3
   bluetooth.init.test_llcp:
     extra_args: CONF_FILE=prj_llcp.conf

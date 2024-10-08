@@ -98,7 +98,7 @@ display sample can be built for this board like so:
 
 .. zephyr-app-commands::
    :board: rd_rw612_bga
-   :gen-args: -DDTC_OVERLAY_FILE=goworld_16880_lcm.overlay
+   :gen-args: -DSETTINGS_OVERLAY_FILES=goworld_16880_lcm.overlay
    :zephyr-app: samples/drivers/display
    :goals: build
    :compact:

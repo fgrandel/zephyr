@@ -23,7 +23,7 @@ tests:
     min_ram: 40
     extra_args:
       - EXTRA_CONF_FILE="overlay-usb.conf"
-      - DTC_OVERLAY_FILE="usb.overlay"
+      - SETTINGS_OVERLAY_FILES="usb.overlay"
     integration_platforms:
       - native_sim
   sample.shell.shell_module.minimal:
@@ -63,7 +63,7 @@ tests:
       - posix
     extra_args:
       - EXTRA_CONF_FILE="overlay-bt.conf"
-      - DTC_OVERLAY_FILE="bt.overlay"
+      - SETTINGS_OVERLAY_FILES="bt.overlay"
   sample.shell.shell_module.login:
     filter: CONFIG_SERIAL and dt_chosen_enabled("zephyr,shell-uart")
     tags: shell

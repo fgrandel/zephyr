@@ -52,7 +52,7 @@ configuration ``-DCONF_FILE=usbd_next_prj.conf`` either directly or via
 * :zephyr:code-sample:`zperf` To build the sample for the new device support,
   set the configuration overlay file
   ``-DDEXTRA_CONF_FILE=overlay-usbd_next_ecm.conf`` and devicetree overlay file
-  ``-DDTC_OVERLAY_FILE="usbd_next_ecm.overlay`` either directly or via ``west``.
+  ``-DSETTINGS_OVERLAY_FILES="usbd_next_ecm.overlay`` either directly or via ``west``.
 
 How to configure and enable USB device support
 **********************************************

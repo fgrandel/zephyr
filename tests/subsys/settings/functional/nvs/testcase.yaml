@@ -8,7 +8,7 @@ tests:
       - settings
       - nvs
   settings.functional.nvs.chosen:
-    extra_args: DTC_OVERLAY_FILE=./chosen.overlay
+    extra_args: SETTINGS_OVERLAY_FILES=./chosen.overlay
     platform_allow:
       - native_sim
       - native_sim/native/64

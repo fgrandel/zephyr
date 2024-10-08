@@ -17,7 +17,7 @@ tests:
     platform_allow: nucleo_h743zi
     integration_platforms:
       - nucleo_h743zi
-    extra_args: DTC_OVERLAY_FILE="boards/nucleo_h743zi.overlay"
+    extra_args: SETTINGS_OVERLAY_FILES="boards/nucleo_h743zi.overlay"
   drivers.uart.basic_api.poll:
     extra_args: CONF_FILE=prj_poll.conf
     tags:
@@ -40,7 +40,7 @@ tests:
   drivers.uart.basic_api.cdc_acm:
     extra_args:
       - EXTRA_CONF_FILE="overlay-usb.conf"
-      - DTC_OVERLAY_FILE="usb.overlay"
+      - SETTINGS_OVERLAY_FILES="usb.overlay"
     tags:
       - drivers
       - usb
@@ -56,4 +56,4 @@ tests:
     platform_allow: frdm_ke17z512
     extra_args:
       - CONF_FILE=prj_shell.conf
-      - DTC_OVERLAY_FILE="boards/frdm_ke17z512_uart.overlay"
+      - SETTINGS_OVERLAY_FILES="boards/frdm_ke17z512_uart.overlay"

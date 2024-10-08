@@ -68,7 +68,7 @@ The following commands build and flash RTU server sample using CDC ACM UART.
    :zephyr-app: samples/subsys/modbus/rtu_server
    :board: nrf52840dk/nrf52840
    :goals: build flash
-   :gen-args: -DDTC_OVERLAY_FILE=cdc-acm.overlay -DEXTRA_CONF_FILE=overlay-cdc-acm.conf
+   :gen-args: -DSETTINGS_OVERLAY_FILES=cdc-acm.overlay -DEXTRA_CONF_FILE=overlay-cdc-acm.conf
    :compact:
 
 On the client side, PC or laptop, the following command connects PyModbus

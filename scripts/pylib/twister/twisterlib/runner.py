@@ -1177,9 +1177,15 @@ class ProjectBuilder(FilterBuilder):
         sys.stdout.flush()
 
     @staticmethod
-    def cmake_assemble_args(extra_args, handler, extra_conf_files, extra_overlay_confs,
-                            extra_dtc_overlay_files, cmake_extra_args,
-                            build_dir):
+    def cmake_assemble_args(
+        extra_args,
+        handler,
+        extra_conf_files,
+        extra_overlay_confs,
+        extra_settings_overlay_files,
+        cmake_extra_args,
+        build_dir,
+    ):
         # Retain quotes around config options
         config_options = [arg for arg in extra_args if arg.startswith("CONFIG_")]
         args = [arg for arg in extra_args if not arg.startswith("CONFIG_")]
@@ -1192,8 +1198,10 @@ class ProjectBuilder(FilterBuilder):
         if extra_conf_files:
             args.append(f"CONF_FILE=\"{';'.join(extra_conf_files)}\"")
 
-        if extra_dtc_overlay_files:
-            args.append(f"DTC_OVERLAY_FILE=\"{';'.join(extra_dtc_overlay_files)}\"")
+        if extra_settings_overlay_files:
+            args.append(
+                f"SETTINGS_OVERLAY_FILES=\"{';'.join(extra_settings_overlay_files)}\""
+            )
 
         # merge overlay files into one variable
         overlays = extra_overlay_confs.copy()
@@ -1237,8 +1245,8 @@ class ProjectBuilder(FilterBuilder):
             self.instance.handler,
             self.testsuite.extra_conf_files,
             self.testsuite.extra_overlay_confs,
-            self.testsuite.extra_dtc_overlay_files,
-            self.options.extra_args, # CMake extra args
+            self.testsuite.extra_settings_overlay_files,
+            self.options.extra_args,  # CMake extra args
             self.instance.build_dir,
         )
         return self.run_cmake(args,filter_stages)

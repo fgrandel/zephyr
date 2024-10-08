@@ -17,8 +17,8 @@ tests:
     extra_args: CONFIG_FLASH_SIMULATOR_EXPLICIT_ERASE=n
     platform_allow: native_sim
   filesystem.fcb.native_sim.fcb_0x00:
-    extra_args: DTC_OVERLAY_FILE=boards/native_sim_ev_0x00.overlay
+    extra_args: SETTINGS_OVERLAY_FILES=boards/native_sim_ev_0x00.overlay
     platform_allow: native_sim
   filesystem.fcb.qemu_x86.fcb_0x00:
-    extra_args: DTC_OVERLAY_FILE=boards/qemu_x86_ev_0x00.overlay
+    extra_args: SETTINGS_OVERLAY_FILES=boards/qemu_x86_ev_0x00.overlay
     platform_allow: qemu_x86

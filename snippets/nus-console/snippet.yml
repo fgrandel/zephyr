@@ -1,4 +1,4 @@
 name: nus-console
 append:
   EXTRA_CONF_FILE: nus-console.conf
-  EXTRA_DTC_OVERLAY_FILE: nus-console.overlay
+  EXTRA_SETTINGS_OVERLAY_FILES: nus-console.overlay

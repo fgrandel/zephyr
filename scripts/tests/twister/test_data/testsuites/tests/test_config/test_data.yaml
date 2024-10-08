@@ -6,7 +6,7 @@ common:
     - "conf4"
   extra_overlay_confs:
     - "oc2.conf"
-  extra_dtc_overlay_files:
+  extra_settings_overlay_files:
     - "overlay3"
     - "overlay4"
 tests:
@@ -18,7 +18,7 @@ tests:
       - "conf8"
     extra_overlay_confs:
       - "oc4.conf"
-    extra_dtc_overlay_files:
+    extra_settings_overlay_files:
       - "overlay7"
       - "overlay8"
     extra_configs:

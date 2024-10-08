@@ -25,17 +25,17 @@ tests:
     integration_platforms:
       - qemu_x86
   drivers.flash.flash_simulator.qemu_erase_value_0x00:
-    extra_args: DTC_OVERLAY_FILE=boards/qemu_x86_ev_0x00.overlay
+    extra_args: SETTINGS_OVERLAY_FILES=boards/qemu_x86_ev_0x00.overlay
     platform_allow: qemu_x86
     integration_platforms:
       - qemu_x86
   drivers.flash.flash_simulator.native_erase_value_0x00:
-    extra_args: DTC_OVERLAY_FILE=boards/native_ev_0x00.overlay
+    extra_args: SETTINGS_OVERLAY_FILES=boards/native_ev_0x00.overlay
     platform_allow: native_posix native_sim
     integration_platforms:
       - native_sim
   drivers.flash.flash_simulator.native_64_erase_value_0x00:
-    extra_args: DTC_OVERLAY_FILE=boards/native_64_ev_0x00.overlay
+    extra_args: SETTINGS_OVERLAY_FILES=boards/native_64_ev_0x00.overlay
     platform_allow: native_posix/native/64 native_sim/native/64
     integration_platforms:
       - native_sim/native/64

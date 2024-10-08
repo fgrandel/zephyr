@@ -40,13 +40,13 @@ tests:
     platform_allow: nrf52840dk/nrf52840
     extra_args:
       - EXTRA_CONF_FILE=boards/nrf52840dk_nrf52840_spi.conf
-      - DTC_OVERLAY_FILE=boards/nrf52840dk_nrf52840_spi.overlay
+      - SETTINGS_OVERLAY_FILES=boards/nrf52840dk_nrf52840_spi.overlay
   sample.filesystem.littlefs.nrf52840dk_qspi:
     build_only: true
     platform_allow: nrf52840dk/nrf52840
     extra_args:
       - EXTRA_CONF_FILE=boards/nrf52840dk_nrf52840_qspi.conf
-      - DTC_OVERLAY_FILE=boards/nrf52840dk_nrf52840_qspi.overlay
+      - SETTINGS_OVERLAY_FILES=boards/nrf52840dk_nrf52840_qspi.overlay
   sample.filesystem.littlefs.stm32h747i_disco_m7_blk:
     build_only: true
     platform_allow: stm32h747i_disco/stm32h747xx/m7
