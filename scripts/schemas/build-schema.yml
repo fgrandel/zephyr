@@ -56,6 +56,29 @@ mapping:
             type: seq
             sequence:
               - type: str
+      configuration:
+        type: map
+        mapping:
+          files:
+            type: seq
+            sequence:
+              - type: str
+          user-files:
+            type: seq
+            sequence:
+              - type: str
+          extra-user-files:
+            type: seq
+            sequence:
+              - type: str
+          include-dirs:
+            type: seq
+            sequence:
+              - type: str
+          bindings-dirs:
+            type: seq
+            sequence:
+              - type: str
       kconfig:
         type: map
         mapping:

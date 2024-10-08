@@ -1623,13 +1623,15 @@ endfunction()
 #                       [MERGE [REVERSE]]
 #   )
 #
-# <out-variable>:            Output variable where the build string will be returned.
-# SHORT <out-variable>:      Output variable where the shortened build string will be returned.
-# BOARD <board>:             Board name to use when creating the build string.
-# BOARD_REVISION <revision>: Board revision to use when creating the build string.
-# BUILD <type>:              Build type to use when creating the build string.
-# MERGE:                     Return a list of build strings instead of a single build string.
-# REVERSE:                   Reverse the list before returning it.
+# <out-variable>:                Output variable where the build string(s) including the SoC will be returned.
+# SHORT <out-variable>:          Output variable where the shortened build string(s) w/o SoC will be returned.
+# BOARD <board>:                 Board name to use when creating the build string.
+# BOARD_REVISION <revision>:     Board revision to use when creating the build string.
+# BOARD_QUALIFIERS <qualifiers>: Board qualifiers to use (format: /soc/bar/...).
+# BUILD <type>:                  Build type to use when creating the build string (deprecated).
+# MERGE:                         If a board revision is given, then a second build string w/o
+#                                the revision will be appended to the output list.
+# REVERSE:                       Reverse the list before returning it.
 #
 # Examples
 # calling
@@ -1671,68 +1673,64 @@ function(zephyr_build_string outvar)
     )
   endif()
 
-  if(DEFINED BUILD_STR_BOARD_REVISION AND NOT BUILD_STR_BOARD)
-    message(FATAL_ERROR
-      "zephyr_build_string(${ARGV0} <list> BOARD_REVISION ${BUILD_STR_BOARD_REVISION} ...)"
-      " given without BOARD argument, please specify BOARD"
-    )
+  if(NOT DEFINED BUILD_STR_BOARD OR BUILD_STR_BOARD STREQUAL "")
+    if(DEFINED BUILD_STR_BOARD_REVISION)
+      message(FATAL_ERROR
+        "zephyr_build_string(${ARGV0} <list> BOARD_REVISION ${BUILD_STR_BOARD_REVISION} ...)"
+        " given without BOARD argument, please specify BOARD"
+      )
+    endif()
+
+    if(DEFINED BUILD_STR_SHORT)
+      message(FATAL_ERROR
+        "zephyr_build_string(${ARGV0} <list> SHORT ${BUILD_STR_SHORT} ...)"
+        " given without BOARD argument, these must be used together"
+      )
+    endif()
   endif()
 
-  if(DEFINED BUILD_STR_BOARD_REVISION AND NOT DEFINED BUILD_STR_BOARD)
-    message(FATAL_ERROR
-      "zephyr_build_string(${ARGV0} <list> BOARD_REVISION ${BUILD_STR_BOARD_REVISION} ...)"
-      " given without BOARD argument, these must be used together"
-    )
+  if(BUILD_STR_MERGE AND (NOT DEFINED BUILD_STR_BOARD_REVISION OR BUILD_STR_BOARD_REVISION STREQUAL ""))
+    set(BUILD_STR_MERGE FALSE)
   endif()
 
-  if(DEFINED BUILD_STR_SHORT AND NOT DEFINED BUILD_STR_BOARD)
-    message(FATAL_ERROR
-      "zephyr_build_string(${ARGV0} <list> SHORT ${BUILD_STR_SHORT} ...)"
-      " given without BOARD argument, these must be used together"
-    )
+  if(BUILD_STR_SHORT AND (NOT DEFINED BUILD_STR_BOARD_QUALIFIERS OR BUILD_STR_BOARD_QUALIFIERS STREQUAL ""))
+    set(BUILD_STR_SHORT FALSE)
   endif()
 
-  string(REPLACE "/" ";" str_segment_list "${BUILD_STR_BOARD_QUALIFIERS}")
+  string(REPLACE "/" ";" qualifier_list "${BUILD_STR_BOARD_QUALIFIERS}")
   string(REPLACE "." "_" revision_string "${BUILD_STR_BOARD_REVISION}")
 
-  string(JOIN "_" ${outvar} ${BUILD_STR_BOARD} ${str_segment_list} ${revision_string} ${BUILD_STR_BUILD})
+  string(JOIN "_" ${outvar} ${BUILD_STR_BOARD} ${qualifier_list} ${revision_string} ${BUILD_STR_BUILD})
 
   if(BUILD_STR_MERGE)
-    string(JOIN "_" variant_string ${BUILD_STR_BOARD} ${str_segment_list} ${BUILD_STR_BUILD})
-
-    if(NOT "${variant_string}" IN_LIST ${outvar})
-      list(APPEND ${outvar} "${variant_string}")
-    endif()
+    string(JOIN "_" build_str_no_revision ${BUILD_STR_BOARD} ${qualifier_list} ${BUILD_STR_BUILD})
+    list(APPEND ${outvar} "${build_str_no_revision}")
   endif()
 
   if(BUILD_STR_REVERSE)
     list(REVERSE ${outvar})
   endif()
-  list(REMOVE_DUPLICATES ${outvar})
 
-  if(BUILD_STR_SHORT AND BUILD_STR_BOARD_QUALIFIERS)
-    string(REGEX REPLACE "^/[^/]*(.*)" "\\1" shortened_qualifiers "${BOARD_QUALIFIERS}")
-    string(REPLACE "/" ";" str_short_segment_list "${shortened_qualifiers}")
+  set(${outvar} ${${outvar}} PARENT_SCOPE)
+
+  if(BUILD_STR_SHORT)
+    string(REGEX REPLACE "^/[^/]*(.*)" "\\1" qualifiers_no_soc "${BUILD_STR_BOARD_QUALIFIERS}")
+    string(REPLACE "/" ";" qualifiers_no_soc_list "${qualifiers_no_soc}")
     string(JOIN "_" ${BUILD_STR_SHORT}
-           ${BUILD_STR_BOARD} ${str_short_segment_list} ${revision_string} ${BUILD_STR_BUILD}
+           ${BUILD_STR_BOARD} ${qualifiers_no_soc_list} ${revision_string} ${BUILD_STR_BUILD}
     )
-    if(BUILD_STR_MERGE)
-      string(JOIN "_" variant_string ${BUILD_STR_BOARD} ${str_short_segment_list} ${BUILD_STR_BUILD})
 
-      if(NOT "${variant_string}" IN_LIST ${BUILD_STR_SHORT})
-        list(APPEND ${BUILD_STR_SHORT} "${variant_string}")
-      endif()
+    if(BUILD_STR_MERGE)
+      string(JOIN "_" build_str_no_revision_no_soc ${BUILD_STR_BOARD} ${qualifiers_no_soc_list} ${BUILD_STR_BUILD})
+      list(APPEND ${BUILD_STR_SHORT} "${build_str_no_revision_no_soc}")
     endif()
 
     if(BUILD_STR_REVERSE)
       list(REVERSE ${BUILD_STR_SHORT})
     endif()
-    list(REMOVE_DUPLICATES ${BUILD_STR_SHORT})
+
     set(${BUILD_STR_SHORT} ${${BUILD_STR_SHORT}} PARENT_SCOPE)
   endif()
-
-  # This updates the provided outvar in parent scope (callers scope)
-  set(${outvar} ${${outvar}} PARENT_SCOPE)
 endfunction()
 
 # Function to add one or more directories to the include list passed to the syscall generator.
@@ -2661,36 +2659,51 @@ endfunction()
 # returns an updated list of absolute paths
 #
 # Usage:
-#   zephyr_file(CONF_FILES <paths> [DTS <list>] [KCONF <list>]
-#               [BOARD <board> [BOARD_REVISION <revision>] | NAMES <name> ...]
+#   zephyr_file(CONF_FILES <paths> [SETTINGS <list>] [KCONF <list>] [DEFCONF <defconf_target>]
+#               [
+#                 BOARD <board> [BOARD_REVISION <revision>] [BOARD_QUALIFIERS <qualifiers>] |
+#                 BOARD_QUALIFIERS <qualifiers> QUALIFIERS |
+#                 NAMES <name> ...
+#               ]
 #               [BUILD <type>] [SUFFIX <suffix>] [REQUIRED]
 #   )
 #
 # CONF_FILES <paths>: Find all configuration files in the list of paths and
 #                     return them in a list. If paths is empty then no configuration
 #                     files are returned. Configuration files will be:
-#                     - DTS:       Overlay files (.overlay)
-#                     - Kconfig:   Config fragments (.conf)
+#                     - devicetree and configuration settings (.overlay,
+#                       .config.yml, .config.yaml)
+#                     - Kconfig:   Kconfig fragments (.conf)
 #                     - defconfig: defconfig files (_defconfig)
 #                     The conf file search will return existing configuration
 #                     files for the current board.
+#
 #                     CONF_FILES takes the following additional arguments:
-#                     BOARD <board>:             Find configuration files for specified board.
-#                     BOARD_REVISION <revision>: Find configuration files for specified board
+#
+#                     BOARD <board>:             Find configuration files for the specified board.
+#                     BOARD_REVISION <revision>: Find configuration files for the specified board
 #                                                revision. Requires BOARD to be specified.
-#
-#                                                If no board is given the current BOARD and
-#                                                BOARD_REVISION will be used, unless NAMES are
-#                                                specified.
-#
+#                     BOARD_QUALIFIERS <qualifiers>: Find configuration files for the specified
+#                                                board qualifiers. Can be used standalone when
+#                                                the QUALIFIERS flag is set, otherwise requires
+#                                                BOARD to be set.
 #                     NAMES <name1> [name2] ...  List of file names to look for and instead of
 #                                                creating file names based on board settings.
 #                                                Only the first match found in <paths> will be
 #                                                returned in the <list>
-#                     DTS <list>:    List to append DTS overlay files in <path> to
+#
+#                     If neither BOARD nor NAMES nor the QUALIFIER option are given, then the
+#                     current BOARD, BOARD_REVISION and BOARD_QUALIFIERS from the global
+#                     environment will be used.
+#
+#                     QUALIFIERS: If this flag is set, include only the given board qualifiers
+#                                 in the file name. BOARD and BOARD_REVISION must not be set.
+#
+#                     SETTINGS <list>: List to append devicetree and configuration settings
+#                                      overlay files in <path> to
 #                     KCONF <list>:  List to append Kconfig fragment files in <path> to
 #                     DEFCONF <list>: List to append _defconfig files in <path> to
-#                     BUILD <type>:  Build type to include for search.
+#                     BUILD <type>:  Build type to include for search (deprecated).
 #                                    For example:
 #                                    BUILD debug, will look for <board>_debug.conf
 #                                    and <board>_debug.overlay, instead of <board>.conf
@@ -2699,12 +2712,12 @@ endfunction()
 #                                    For example:
 #                                    SUFFIX fish, will look for <file>_fish.conf and use
 #                                    if found but will use <file>.conf if not found
-#                     REQUIRED:      Option to indicate that the <list> specified by DTS or KCONF
+#                     REQUIRED:      Option to indicate that the <list> specified by SETTINGS or KCONF
 #                                    must contain at least one element, else an error will be raised.
 #
 function(zephyr_file)
-  set(file_options APPLICATION_ROOT CONF_FILES)
-  if((ARGC EQUAL 0) OR (NOT (ARGV0 IN_LIST file_options)))
+  set(modes APPLICATION_ROOT CONF_FILES)
+  if((ARGC EQUAL 0) OR (NOT (ARGV0 IN_LIST modes)))
     message(FATAL_ERROR "No <mode> given to `zephyr_file(<mode> <args>...)` function,\n \
 Please provide one of following: APPLICATION_ROOT, CONF_FILES")
   endif()
@@ -2713,7 +2726,7 @@ Please provide one of following: APPLICATION_ROOT, CONF_FILES")
     set(single_args APPLICATION_ROOT BASE_DIR)
   elseif(${ARGV0} STREQUAL CONF_FILES)
     set(options QUALIFIERS REQUIRED)
-    set(single_args BOARD BOARD_REVISION BOARD_QUALIFIERS DTS KCONF DEFCONFIG BUILD SUFFIX)
+    set(single_args BOARD BOARD_REVISION BOARD_QUALIFIERS SETTINGS KCONF DEFCONFIG BUILD SUFFIX)
     set(multi_args CONF_FILES NAMES)
   endif()
 
@@ -2760,210 +2773,335 @@ Relative paths are only allowed with `-D${ARGV1}=<path>`")
     list(REMOVE_DUPLICATES ${ZFILE_APPLICATION_ROOT})
     # This updates the provided argument in parent scope (callers scope)
     set(${ZFILE_APPLICATION_ROOT} ${${ZFILE_APPLICATION_ROOT}} PARENT_SCOPE)
+
+    return()
   endif()
 
-  if(ZFILE_CONF_FILES)
-    if(DEFINED ZFILE_BOARD_REVISION AND NOT ZFILE_BOARD)
-        message(FATAL_ERROR
-          "zephyr_file(${ARGV0} <path> BOARD_REVISION ${ZFILE_BOARD_REVISION} ...)"
-          " given without BOARD argument, please specify BOARD"
-        )
+  # CONF_FILES mode ...
+  if(NOT (DEFINED ZFILE_SETTINGS OR DEFINED ZFILE_KCONF OR DEFINED ZFILE_DEFCONFIG))
+    message(FATAL_ERROR "zephyr_file(${ARGV0} <path> ...)"
+            " requires either SETTINGS or KCONF or DEFCONFIG argument."
+    )
+  endif()
+
+  if(ZFILE_NAMES)
+    if(DEFINED ZFILE_BOARD OR DEFINED ZFILE_BOARD_REVISION OR DEFINED ZFILE_BOARD_QUALIFIERS OR ZFILE_QUALIFIERS)
+      message(FATAL_ERROR
+        "zephyr_file(${ARGV0} <path> NAMES ${ZFILE_NAMES} ...)"
+        " cannot be combined with the BOARD, BOARD_REVISION or"
+        " BOARD_QUALIFIERS arguments or the QUALIFIERS option."
+      )
     endif()
 
-    if(NOT DEFINED ZFILE_BOARD)
+    set(filename_list ${ZFILE_NAMES})
+  elseif(ZFILE_QUALIFIERS)
+    if(DEFINED ZFILE_BOARD OR DEFINED ZFILE_BOARD_REVISION)
+      message(FATAL_ERROR
+        "zephyr_file(${ARGV0} <path> ... QUALIFIERS ...)"
+        " cannot be combined with the BOARD or BOARD_REVISION arguments."
+      )
+    endif()
+
+    if(DEFINED ZFILE_BOARD_QUALIFIERS AND NOT ZFILE_BOARD_QUALIFIERS STREQUAL "")
+      zephyr_build_string(filename_list
+                          BOARD_QUALIFIERS ${ZFILE_BOARD_QUALIFIERS}
+                          BUILD ${ZFILE_BUILD}
+                          MERGE REVERSE
+      )
+    endif()
+  else()
+    if(NOT DEFINED ZFILE_BOARD OR ZFILE_BOARD STREQUAL "")
+      if(DEFINED ZFILE_BOARD_REVISION)
+          message(FATAL_ERROR
+            "zephyr_file(${ARGV0} <path> BOARD_REVISION ${ZFILE_BOARD_REVISION} ...)"
+            " given without BOARD argument, please specify BOARD"
+          )
+      endif()
+
+      if(DEFINED ZFILE_BOARD_QUALIFIERS)
+          message(FATAL_ERROR
+            "zephyr_file(${ARGV0} <path> BOARD_QUALIFIERS ${ZFILE_BOARD_QUALIFIERS} ...)"
+            " given without BOARD argument, please specify BOARD"
+          )
+      endif()
+
       # Defaulting to system wide settings when BOARD is not given as argument
       set(ZFILE_BOARD ${BOARD})
-      if(DEFINED BOARD_REVISION)
+
+      if(DEFINED BOARD_REVISION AND NOT (BOARD_REVISION STREQUAL ""))
         set(ZFILE_BOARD_REVISION ${BOARD_REVISION})
       endif()
 
-      if(DEFINED BOARD_QUALIFIERS)
+      if(DEFINED BOARD_QUALIFIERS AND NOT (BOARD_QUALIFIERS STREQUAL ""))
         set(ZFILE_BOARD_QUALIFIERS ${BOARD_QUALIFIERS})
       endif()
     endif()
 
-    if(ZFILE_NAMES)
-      set(dts_filename_list ${ZFILE_NAMES})
-      set(kconf_filename_list ${ZFILE_NAMES})
-    else()
-      if(NOT ZFILE_QUALIFIERS)
-        zephyr_build_string(filename_list
-                            SHORT shortened_filename_list
-                            BOARD ${ZFILE_BOARD}
-                            BOARD_REVISION ${ZFILE_BOARD_REVISION}
-                            BOARD_QUALIFIERS ${ZFILE_BOARD_QUALIFIERS}
-                            BUILD ${ZFILE_BUILD}
-                            MERGE REVERSE
-        )
-      else()
-        zephyr_build_string(filename_list
-                            BOARD_QUALIFIERS ${ZFILE_BOARD_QUALIFIERS}
-                            BUILD ${ZFILE_BUILD}
-                            MERGE REVERSE
+    zephyr_build_string(filename_list
+                        SHORT filename_list_no_soc
+                        BOARD ${ZFILE_BOARD}
+                        BOARD_REVISION ${ZFILE_BOARD_REVISION}
+                        BOARD_QUALIFIERS ${ZFILE_BOARD_QUALIFIERS}
+                        BUILD ${ZFILE_BUILD}
+                        MERGE REVERSE
+    )
+  endif()
+
+  if(DEFINED ZFILE_SETTINGS)
+    foreach(path ${ZFILE_CONF_FILES})
+      foreach(filename IN ZIP_LISTS filename_list filename_list_no_soc)
+        foreach(i RANGE 1)
+          if(NOT DEFINED filename_${i} OR filename_${i} STREQUAL "")
+            unset(test_file_${i})
+            continue()
+          endif()
+
+          if(IS_ABSOLUTE filename_${i})
+            set(test_file_${i} ${filename_${i}})
+          else()
+            set(test_file_${i} ${path}/${filename_${i}})
+          endif()
+
+          if(path STREQUAL BOARD_DIR)
+            set(dts_source_file_${i} ${test_file_${i}}.dts)
+            if(NOT DEFINED dts_source_files)
+              set(dts_source_files "")
+            endif()
+            if(EXISTS ${dts_source_file_${i}})
+              message(DEBUG "${dts_source_file_${i}}: found")
+              list(APPEND found_source_files ${dts_source_file_${i}})
+              list(APPEND found_settings_files ${dts_source_file_${i}})
+            else()
+              message(DEBUG "${dts_source_file_${i}}: missing")
+              unset(dts_source_file_${i})
+            endif()
+          endif()
+
+          set(dts_overlay_file_${i} ${test_file_${i}}.overlay)
+          zephyr_file_suffix(dts_overlay_file_${i} SUFFIX ${ZFILE_SUFFIX})
+          if(EXISTS ${dts_overlay_file_${i}})
+            message(DEBUG "${dts_overlay_file_${i}}: found")
+            list(APPEND found_settings_files ${dts_overlay_file_${i}})
+          else()
+            message(DEBUG "${dts_overlay_file_${i}}: missing")
+            unset(dts_overlay_file_${i})
+          endif()
+
+          set(config_yaml_file ${test_file_${i}}.config.yaml)
+          set(config_yml_file ${test_file_${i}}.config.yml)
+          if(EXISTS ${config_yaml_file} AND EXISTS ${config_yml_file})
+            message(FATAL_ERROR
+              "Both ${config_yaml_file} and ${config_yml_file} exist."
+              " Please remove one of them."
+            )
+          elseif(EXISTS ${config_yaml_file})
+            message(DEBUG "${config_yaml_file}: found")
+            message(DEBUG "${config_yml_file}: missing")
+            set(config_file_${i} ${config_yaml_file})
+            list(APPEND found_settings_files ${config_yaml_file})
+          elseif(EXISTS ${config_yml_file})
+            message(DEBUG "${config_yaml_file}: missing")
+            message(DEBUG "${config_yml_file}: found")
+            set(config_file_${i} ${config_yml_file})
+            list(APPEND found_settings_files ${config_yml_file})
+          else()
+            message(DEBUG "${config_yaml_file}: missing")
+            message(DEBUG "${config_yml_file}: missing")
+            unset(config_file_${i})
+          endif()
+        endforeach()
+
+        if(dts_overlay_file_1 AND NOT BOARD_${ZFILE_BOARD}_SINGLE_SOC)
+          message(FATAL_ERROR
+            "Board ${ZFILE_BOARD} defines multiple SoCs.\nShortened file name"
+            " '${dts_overlay_file_1}' not allowed, use '${dts_overlay_file_0}' naming."
+          )
+        endif()
+
+        if(config_file_1 AND NOT BOARD_${ZFILE_BOARD}_SINGLE_SOC)
+          message(FATAL_ERROR
+            "Board ${ZFILE_BOARD} defines multiple SoCs.\nShortened file name"
+            " '${config_file_1}' not allowed, use '${config_file_0}' naming."
+          )
+        endif()
+
+        if(dts_overlay_file_0 AND dts_overlay_file_1)
+          message(FATAL_ERROR
+            "Conflicting devicetree overlays discovered."
+            " Cannot use both '${dts_overlay_file_0}' and '${dts_overlay_file_1}'."
+            " Please choose one naming style, '${dts_overlay_0}' is recommended."
+          )
+        endif()
+
+        if(config_file_0 AND config_file_1)
+          message(FATAL_ERROR
+            "Conflicting configuration files discovered."
+            " Cannot use both '${config_file_0}' and '${config_file_1}'."
+            " Please choose one naming style, '${config_file_0}' is recommended."
+          )
+        endif()
+
+        if(dts_overlay_file_0 OR dts_overlay_file_1 OR config_file_0 OR config_file_1)
+          if(ZFILE_BUILD)
+            set(deprecated_file_found y)
+          endif()
+
+          if(ZFILE_NAMES)
+            break()
+          endif()
+        endif()
+      endforeach()
+    endforeach()
+
+    if(DEFINED dts_source_files)
+      list(LENGTH found_source_files found_source_files_len)
+      if(found_source_files_len GREATER 1)
+        message(FATAL_ERROR
+          "Multiple devicetree source files found: ${found_source_files}"
+          " Please use only one devicetree source file."
         )
       endif()
 
-      set(dts_filename_list ${filename_list})
-      set(dts_shortened_filename_list ${shortened_filename_list})
-      list(TRANSFORM dts_filename_list APPEND ".overlay")
-      list(TRANSFORM dts_shortened_filename_list APPEND ".overlay")
-
-      set(kconf_filename_list ${filename_list})
-      set(kconf_shortened_filename_list ${shortened_filename_list})
-      list(TRANSFORM kconf_filename_list APPEND ".conf")
-      list(TRANSFORM kconf_shortened_filename_list APPEND ".conf")
-    endif()
-
-    if(ZFILE_DTS)
-      foreach(path ${ZFILE_CONF_FILES})
-        foreach(filename IN ZIP_LISTS dts_filename_list dts_shortened_filename_list)
-          foreach(i RANGE 1)
-            if(NOT IS_ABSOLUTE filename_${i} AND DEFINED filename_${i})
-              set(test_file_${i} ${path}/${filename_${i}})
-            else()
-              set(test_file_${i} ${filename_${i}})
-            endif()
-            zephyr_file_suffix(test_file_${i} SUFFIX ${ZFILE_SUFFIX})
-
-            if(NOT EXISTS ${test_file_${i}})
-              set(test_file_${i})
-            endif()
-          endforeach()
-
-          if(test_file_0 OR test_file_1)
-            list(APPEND found_dts_files ${test_file_0})
-            list(APPEND found_dts_files ${test_file_1})
-
-            if(DEFINED ZFILE_BUILD)
-              set(deprecated_file_found y)
-            endif()
-
-            if(ZFILE_NAMES)
-              break()
-            endif()
-          endif()
-
-          if(test_file_1 AND NOT BOARD_${ZFILE_BOARD}_SINGLE_SOC)
-            message(FATAL_ERROR "Board ${ZFILE_BOARD} defines multiple SoCs.\nShortened file name "
-                    "(${filename_1}) not allowed, use '<board>_<soc>.overlay' naming"
-            )
-          endif()
-
-          if(test_file_0 AND test_file_1)
-            message(FATAL_ERROR "Conflicting file names discovered. Cannot use both ${filename_0} "
-                    "and ${filename_1}. Please choose one naming style, "
-                    "${filename_0} is recommended."
-            )
-          endif()
-        endforeach()
-      endforeach()
-
-      list(APPEND ${ZFILE_DTS} ${found_dts_files})
-
-      # This updates the provided list in parent scope (callers scope)
-      set(${ZFILE_DTS} ${${ZFILE_DTS}} PARENT_SCOPE)
-    endif()
-
-    if(ZFILE_KCONF)
-      set(found_conf_files)
-      foreach(path ${ZFILE_CONF_FILES})
-        foreach(filename IN ZIP_LISTS kconf_filename_list kconf_shortened_filename_list)
-          foreach(i RANGE 1)
-            if(NOT IS_ABSOLUTE filename_${i} AND DEFINED filename_${i})
-              set(test_file_${i} ${path}/${filename_${i}})
-            else()
-              set(test_file_${i} ${filename_${i}})
-            endif()
-            zephyr_file_suffix(test_file_${i} SUFFIX ${ZFILE_SUFFIX})
-
-            if(NOT EXISTS ${test_file_${i}})
-              set(test_file_${i})
-            endif()
-          endforeach()
-
-          if(test_file_0 OR test_file_1)
-            list(APPEND found_conf_files ${test_file_0})
-            list(APPEND found_conf_files ${test_file_1})
-
-            if(DEFINED ZFILE_BUILD)
-              set(deprecated_file_found y)
-            endif()
-
-            if(ZFILE_NAMES)
-              break()
-            endif()
-          endif()
-
-          if(test_file_1 AND NOT BOARD_${ZFILE_BOARD}_SINGLE_SOC)
-            message(FATAL_ERROR "Board ${ZFILE_BOARD} defines multiple SoCs.\nShortened file name "
-                    "(${filename_1}) not allowed, use '<board>_<soc>.conf' naming"
-            )
-          endif()
-
-          if(test_file_0 AND test_file_1)
-            message(FATAL_ERROR "Conflicting file names discovered. Cannot use both ${filename_0} "
-                    "and ${filename_1}. Please choose one naming style, "
-                    "${filename_0} is recommended."
-            )
-          endif()
-        endforeach()
-      endforeach()
-
-      list(APPEND ${ZFILE_KCONF} ${found_conf_files})
-
-      # This updates the provided list in parent scope (callers scope)
-      set(${ZFILE_KCONF} ${${ZFILE_KCONF}} PARENT_SCOPE)
-
-      if(NOT ${ZFILE_KCONF})
-        set(not_found ${kconf_filename_list})
+      if(found_source_files_len EQUAL 0)
+        message(FATAL_ERROR
+          "No devicetree source file found."
+          " Please ensure that your boards directory '${BOARD_DIR}'"
+          " contains exactly one matching *.dts file for your combination"
+          " of board '${ZFILE_BOARD}', revision '${ZFILE_BOARD_REVISION}' and qualifiers '${ZFILE_BOARD_QUALIFIERS}'."
+        )
       endif()
     endif()
 
-    if(ZFILE_REQUIRED AND DEFINED not_found)
-      message(FATAL_ERROR
-              "No ${not_found} file(s) was found in the ${ZFILE_CONF_FILES} folder(s), "
-              "please read the Zephyr documentation on application development."
-      )
+    list(APPEND ${ZFILE_SETTINGS} ${found_settings_files})
+    list(REMOVE_DUPLICATES ${ZFILE_SETTINGS})
+
+    # This updates the provided list in parent scope (callers scope)
+    set(${ZFILE_SETTINGS} ${${ZFILE_SETTINGS}} PARENT_SCOPE)
+
+    if(NOT ${ZFILE_SETTINGS})
+      set(settings_not_found ${filename_list})
     endif()
+  endif()
 
-    if(deprecated_file_found)
-      message(DEPRECATION "prj_<build>.conf was deprecated after Zephyr 3.5,"
-                          " you should switch to using -DFILE_SUFFIX instead")
-    endif()
+  if(DEFINED ZFILE_KCONF)
+    set(kconf_filename_list ${filename_list})
+    set(kconf_shortened_filename_list ${filename_list_no_soc})
+    list(TRANSFORM kconf_filename_list APPEND ".conf")
+    list(TRANSFORM kconf_shortened_filename_list APPEND ".conf")
 
-    if(ZFILE_DEFCONFIG)
-      set(found_defconf_files)
-      foreach(path ${ZFILE_CONF_FILES})
-        foreach(filename IN ZIP_LISTS filename_list shortened_filename_list)
-          foreach(i RANGE 1)
-            set(test_file_${i} ${path}/${filename_${i}}_defconfig)
-
-            if(EXISTS ${test_file_${i}})
-              list(APPEND found_defconf_files ${test_file_${i}})
-            else()
-              set(test_file_${i})
-            endif()
-          endforeach()
-
-          if(test_file_1 AND NOT BOARD_${ZFILE_BOARD}_SINGLE_SOC)
-            message(FATAL_ERROR "Board ${ZFILE_BOARD} defines multiple SoCs.\nShortened file name "
-                    "(${filename_1}_defconfig) not allowed, use '<board>_<soc>_defconfig' naming"
-            )
+    foreach(path ${ZFILE_CONF_FILES})
+      foreach(filename IN ZIP_LISTS kconf_filename_list kconf_shortened_filename_list)
+        foreach(i RANGE 1)
+          if(NOT IS_ABSOLUTE filename_${i} AND DEFINED filename_${i})
+            set(test_file_${i} ${path}/${filename_${i}})
+          else()
+            set(test_file_${i} ${filename_${i}})
           endif()
+          zephyr_file_suffix(test_file_${i} SUFFIX ${ZFILE_SUFFIX})
 
-          if(test_file_0 AND test_file_1)
-            message(FATAL_ERROR "Conflicting file names discovered. Cannot use both "
-                    "${filename_0}_defconfig and ${filename_1}_defconfig. Please choose one "
-                    "naming style, ${filename_0}_defconfig is recommended."
-            )
+          if(EXISTS ${test_file_${i}})
+            message(DEBUG "${test_file_${i}}: found")
+          else()
+            if(NOT ${test_file_${i}} STREQUAL "")
+              message(DEBUG "${test_file_${i}}: missing")
+            endif()
+            set(test_file_${i})
           endif()
         endforeach()
-      endforeach()
-      list(APPEND ${ZFILE_DEFCONFIG} ${found_defconf_files})
 
-      # This updates the provided list in parent scope (callers scope)
-      set(${ZFILE_DEFCONFIG} ${${ZFILE_DEFCONFIG}} PARENT_SCOPE)
+        if(test_file_0 OR test_file_1)
+          list(APPEND found_kconf_files ${test_file_0})
+          list(APPEND found_kconf_files ${test_file_1})
+
+          if(DEFINED ZFILE_BUILD)
+            set(deprecated_file_found y)
+          endif()
+
+          if(ZFILE_NAMES)
+            break()
+          endif()
+        endif()
+
+        if(test_file_1 AND NOT BOARD_${ZFILE_BOARD}_SINGLE_SOC)
+          message(FATAL_ERROR "Board ${ZFILE_BOARD} defines multiple SoCs.\nShortened file name "
+                  "(${filename_1}) not allowed, use '<board>_<soc>.conf' naming"
+          )
+        endif()
+
+        if(test_file_0 AND test_file_1)
+          message(FATAL_ERROR "Conflicting file names discovered. Cannot use both ${filename_0} "
+                  "and ${filename_1}. Please choose one naming style, "
+                  "${filename_0} is recommended."
+          )
+        endif()
+      endforeach()
+    endforeach()
+
+    list(APPEND ${ZFILE_KCONF} ${found_kconf_files})
+
+    # This updates the provided list in parent scope (callers scope)
+    set(${ZFILE_KCONF} ${${ZFILE_KCONF}} PARENT_SCOPE)
+
+    if(NOT ${ZFILE_KCONF})
+      set(kconf_not_found ${kconf_filename_list})
     endif()
+  endif()
+
+  if(DEFINED ZFILE_DEFCONFIG)
+    set(found_defconf_files)
+    foreach(path ${ZFILE_CONF_FILES})
+      foreach(filename IN ZIP_LISTS filename_list filename_list_no_soc)
+        foreach(i RANGE 1)
+          set(test_file_${i} ${path}/${filename_${i}}_defconfig)
+
+          if(EXISTS ${test_file_${i}})
+            message(DEBUG "${test_file_${i}}: found")
+            list(APPEND found_defconf_files ${test_file_${i}})
+          else()
+            if(NOT ${test_file_${i}} STREQUAL "")
+              message(DEBUG "${test_file_${i}}: missing")
+            endif()
+            set(test_file_${i})
+          endif()
+        endforeach()
+
+        if(test_file_1 AND NOT BOARD_${ZFILE_BOARD}_SINGLE_SOC)
+          message(FATAL_ERROR "Board ${ZFILE_BOARD} defines multiple SoCs.\nShortened file name "
+                  "(${filename_1}_defconfig) not allowed, use '<board>_<soc>_defconfig' naming"
+          )
+        endif()
+
+        if(test_file_0 AND test_file_1)
+          message(FATAL_ERROR "Conflicting file names discovered. Cannot use both "
+                  "${filename_0}_defconfig and ${filename_1}_defconfig. Please choose one "
+                  "naming style, ${filename_0}_defconfig is recommended."
+          )
+        endif()
+      endforeach()
+    endforeach()
+    list(APPEND ${ZFILE_DEFCONFIG} ${found_defconf_files})
+
+    # This updates the provided list in parent scope (callers scope)
+    set(${ZFILE_DEFCONFIG} ${${ZFILE_DEFCONFIG}} PARENT_SCOPE)
+
+    if(NOT ${ZFILE_DEFCONFIG})
+      set(defconfig_not_found ${filename_list})
+    endif()
+  endif()
+
+  if(ZFILE_REQUIRED AND (
+      (ZFILE_SETTINGS AND DEFINED settings_not_found) OR
+      (ZFILE_KCONF AND DEFINED kconfig_not_found) OR
+      (ZFILE_DEFCONFIG AND DEFINED defconfig_not_found)))
+    message(FATAL_ERROR
+            "No ${not_found} file(s) was found in the ${ZFILE_CONF_FILES} folder(s), "
+            "please read the Zephyr documentation on application development."
+    )
+  endif()
+
+  if(deprecated_file_found)
+    message(DEPRECATION "prj_<build>.conf was deprecated after Zephyr 3.5,"
+                        " you should switch to using -DFILE_SUFFIX instead")
   endif()
 endfunction()
 
@@ -3034,15 +3172,17 @@ function(zephyr_file_suffix filename)
       continue()
     endif()
 
-    # Search for the full stop so we know where to add the file suffix before the file extension
+    # Search for the first full stop so we know where to add the file suffix before the file extension
     cmake_path(GET file EXTENSION file_ext)
     cmake_path(REMOVE_EXTENSION file OUTPUT_VARIABLE new_filename)
     cmake_path(APPEND_STRING new_filename "_${SFILE_SUFFIX}${file_ext}")
 
     # Use the filename with the suffix if it exists, if not then fall back to the default
     if(EXISTS "${new_filename}")
+      message(DEBUG "${new_filename}: found")
       list(APPEND tmp_new_list ${new_filename})
     else()
+      message(DEBUG "${new_filename}: missing")
       list(APPEND tmp_new_list ${file})
     endif()
   endforeach()
@@ -4516,7 +4656,7 @@ function(zephyr_dt_preprocess)
 
   foreach(arg ${req_single_args} ${req_multi_args})
     if(NOT DEFINED DT_PREPROCESS_${arg})
-      message(FATAL_ERROR "dt_preprocess() missing required argument: ${arg}")
+      message(FATAL_ERROR "zephyr_dt_preprocess() missing required argument: ${arg}")
     endif()
   endforeach()
 

@@ -11,10 +11,10 @@
 #
 # Outcome:
 # The following variables will be defined when this module completes:
-# - shield_conf_files: List of shield-specific Kconfig fragments
-# - shield_dts_files : List of shield-specific devicetree files
-# - SHIELD_AS_LIST   : A CMake list of shields created from the SHIELD variable.
-# - SHIELD_DIRS      : A CMake list of directories which contain shield definitions
+# - SHIELD_KCONF_FILES:    List of shield-specific Kconfig fragments
+# - SHIELD_SETTINGS_FILES: List of shield-specific devicetree and configuration files
+# - SHIELD_AS_LIST:        A CMake list of shields created from the SHIELD variable.
+# - SHIELD_DIRS:           A CMake list of directories which contain shield definitions
 #
 # The following targets will be defined when this CMake module completes:
 # - shields: when invoked, a list of valid shields will be printed
@@ -81,11 +81,25 @@ if(DEFINED SHIELD)
 
     list(REMOVE_ITEM SHIELD-NOTFOUND ${s})
 
-    # Add <shield>.overlay to the shield_dts_files output variable.
-    list(APPEND
-      shield_dts_files
-      ${SHIELD_DIR_${s}}/${s}.overlay
+    # Add <shield>.overlay[.y[a]ml] to the SHIELD_SETTINGS_FILES output variable.
+    set(shield_dts_overlay ${SHIELD_DIR_${s}}/${s}.overlay)
+    if(NOT EXISTS shield_dts_overlay)
+      message(FATAL_ERROR "Shield overlay not found: ${shield_dts_overlay}")
+    else()
+      list(APPEND SHIELD_SETTINGS_FILES ${shield_dts_overlay})
+    endif()
+
+    set(shield_yaml_config ${SHIELD_DIR_${s}}/${s}.config.yaml)
+    set(shield_yml_config ${SHIELD_DIR_${s}}/${s}.config.yml)
+    if(EXISTS shield_yaml_config AND EXISTS shield_yml_config)
+      message(FATAL_ERROR "Both ${shield_yaml_config} and ${shield_yml_config} exist. "
+                          "Please remove one of them."
       )
+    elseif(EXISTS shield_yaml_config)
+      list(APPEND SHIELD_SETTINGS_FILES ${shield_yaml_config})
+    elseif(EXISTS shield_yml_config)
+      list(APPEND SHIELD_SETTINGS_FILES ${shield_yml_config})
+    endif()
 
     # Add the shield's directory to the SHIELD_DIRS output variable.
     list(APPEND
@@ -96,7 +110,7 @@ if(DEFINED SHIELD)
     # Search for shield/shield.conf file
     if(EXISTS ${SHIELD_DIR_${s}}/${s}.conf)
       list(APPEND
-        shield_conf_files
+        SHIELD_KCONF_FILES
         ${SHIELD_DIR_${s}}/${s}.conf
         )
     endif()
@@ -104,12 +118,12 @@ if(DEFINED SHIELD)
     # Add board-specific .conf and .overlay files to their
     # respective output variables.
     zephyr_file(CONF_FILES ${SHIELD_DIR_${s}}/boards
-                DTS   shield_dts_files
-                KCONF shield_conf_files
+                SETTINGS SHIELD_SETTINGS_FILES
+                KCONF SHIELD_KCONF_FILES
     )
     zephyr_file(CONF_FILES ${SHIELD_DIR_${s}}/boards/${s}
-                DTS   shield_dts_files
-                KCONF shield_conf_files
+                SETTINGS SHIELD_SETTINGS_FILES
+                KCONF SHIELD_KCONF_FILES
     )
   endforeach()
 endif()

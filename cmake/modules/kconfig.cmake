@@ -298,7 +298,7 @@ set(
   ${BOARD_REVISION_CONFIG}
   ${board_extension_conf_files}
   ${CONF_FILE_AS_LIST}
-  ${shield_conf_files}
+  ${SHIELD_KCONF_FILES}
   ${EXTRA_CONF_FILE_AS_LIST}
   ${EXTRA_KCONFIG_OPTIONS_FILE}
   ${config_files}

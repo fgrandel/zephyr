@@ -8,7 +8,7 @@ set(triple arm-arm-none-eabi)
 
 find_package(armclang 6.17 REQUIRED)
 
-set(CMAKE_DTS_PREPROCESSOR
+set(CMAKE_SETTINGS_PREPROCESSOR
       ${CMAKE_C_COMPILER}
       "--target=${triple}"
       # -march=armv6-m is added to silence the warnings:
