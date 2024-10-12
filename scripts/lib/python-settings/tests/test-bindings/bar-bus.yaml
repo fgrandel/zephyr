@@ -2,6 +2,6 @@
 
 description: Bar bus controller
 
-compatible: "bar-bus"
+schema: "bar-bus"
 
 bus: "bar"

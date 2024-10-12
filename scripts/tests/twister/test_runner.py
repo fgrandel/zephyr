@@ -374,7 +374,7 @@ TESTDATA_2_2 = [
      [os.path.join('dummy', 'cmake'),
       '-B' + os.path.join('build', 'dir'), '-DTC_RUNID=1', '-DTC_NAME=testcase',
       '-DSB_CONFIG_COMPILER_WARNINGS_AS_ERRORS=y',
-      '-DEXTRA_GEN_EDT_ARGS=--edtlib-Werror', '-Gdummy_generator',
+      '-DEXTRA_GEN_EDT_ARGS=--stree-Werror', '-Gdummy_generator',
       f'-DPython3_EXECUTABLE={pathlib.Path(sys.executable).as_posix()}',
       '-S' + os.path.join('source', 'dir'),
       'arg1', 'arg2',
@@ -512,12 +512,12 @@ TESTDATA_3 = [
         True, ['dummy', 'west', 'options'], True,
         None, True,
         os.path.join('domain', 'build', 'dir', 'zephyr', '.config'),
-        os.path.join('domain', 'build', 'dir', 'zephyr', 'edt.pickle'),
+        os.path.join('domain', 'build', 'dir', 'zephyr', 'stree.pickle'),
         {'CONFIG_FOO': 'no'},
         {'dummy cache elem': 1},
         {'ARCH': 'dummy arch', 'PLATFORM': 'other', 'env_dummy': True,
          'CONFIG_FOO': 'no', 'dummy cache elem': 1},
-        b'dummy edt pickle contents',
+        b'dummy stree pickle contents',
         [f'Loaded sysbuild domain data from' \
          f' {os.path.join("build", "dir", "domains.yaml")}'],
         {os.path.join('other', 'dummy.testsuite.name'): True}
@@ -527,12 +527,12 @@ TESTDATA_3 = [
         True, ['dummy', 'west', 'options'], True,
         'Dummy parse results', True,
         os.path.join('build', 'dir', 'zephyr', '.config'),
-        os.path.join('build', 'dir', 'zephyr', 'edt.pickle'),
+        os.path.join('build', 'dir', 'zephyr', 'stree.pickle'),
         {'CONFIG_FOO': 'no'},
         {'dummy cache elem': 1},
         {'ARCH': 'dummy arch', 'PLATFORM': 'other', 'env_dummy': True,
          'CONFIG_FOO': 'no', 'dummy cache elem': 1},
-        b'dummy edt pickle contents',
+        b'dummy stree pickle contents',
         [],
         {os.path.join('other', 'dummy.testsuite.name'): False}
     ),
@@ -541,11 +541,11 @@ TESTDATA_3 = [
         False, None, True,
         'Dummy parse results', True,
         None,
-        os.path.join('build', 'dir', 'zephyr', 'edt.pickle'),
+        os.path.join('build', 'dir', 'zephyr', 'stree.pickle'),
         {},
         {},
         {'ARCH': 'dummy arch', 'PLATFORM': 'other', 'env_dummy': True},
-        b'dummy edt pickle contents',
+        b'dummy stree pickle contents',
         [],
         {os.path.join('other', 'dummy.testsuite.name'): False}
     ),
@@ -581,12 +581,12 @@ TESTDATA_3 = [
         True, None, True,
         'Dummy parse results', True,
         None,
-        os.path.join('build', 'dir', 'zephyr', 'edt.pickle'),
+        os.path.join('build', 'dir', 'zephyr', 'stree.pickle'),
         {},
         {'dummy cache elem': 1},
         {'ARCH': 'dummy arch', 'PLATFORM': 'other', 'env_dummy': True,
          'dummy cache elem': 1},
-        b'dummy edt pickle contents',
+        b'dummy stree pickle contents',
         [],
         {os.path.join('other', 'dummy.testsuite.name'): False}
     ),
@@ -595,12 +595,12 @@ TESTDATA_3 = [
         True, None, True,
         None, True,
         None,
-        os.path.join('build', 'dir', 'zephyr', 'edt.pickle'),
+        os.path.join('build', 'dir', 'zephyr', 'stree.pickle'),
         {},
         {'dummy cache elem': 1},
         {'ARCH': 'dummy arch', 'PLATFORM': 'other', 'env_dummy': True,
          'dummy cache elem': 1},
-        b'dummy edt pickle contents',
+        b'dummy stree pickle contents',
         [],
         {os.path.join('other', 'dummy.testsuite.name'): True}
     ),
@@ -609,12 +609,12 @@ TESTDATA_3 = [
         True, None, True,
         'Dummy parse results', False,
         None,
-        os.path.join('build', 'dir', 'zephyr', 'edt.pickle'),
+        os.path.join('build', 'dir', 'zephyr', 'stree.pickle'),
         {},
         {'dummy cache elem': 1},
         {'ARCH': 'dummy arch', 'PLATFORM': 'other', 'env_dummy': True,
          'dummy cache elem': 1},
-        b'dummy edt pickle contents',
+        b'dummy stree pickle contents',
         [],
         {'ARCH': 'dummy arch', 'PLATFORM': 'other', 'env_dummy': True,
          'dummy cache elem': 1}
@@ -624,12 +624,12 @@ TESTDATA_3 = [
         True, None, True,
         SyntaxError, True,
         None,
-        os.path.join('build', 'dir', 'zephyr', 'edt.pickle'),
+        os.path.join('build', 'dir', 'zephyr', 'stree.pickle'),
         {},
         {'dummy cache elem': 1},
         {'ARCH': 'dummy arch', 'PLATFORM': 'other', 'env_dummy': True,
          'dummy cache elem': 1},
-        b'dummy edt pickle contents',
+        b'dummy stree pickle contents',
         ['Failed processing testsuite.yaml'],
         SyntaxError
     ),
@@ -637,15 +637,15 @@ TESTDATA_3 = [
 
 @pytest.mark.parametrize(
     'platform_name, filter_stages, sysbuild,' \
-    ' do_find_cache, west_flash_options, edt_exists,' \
+    ' do_find_cache, west_flash_options, stree_exists,' \
     ' parse_results, testsuite_filter,' \
-    ' expected_defconfig_path, expected_edt_pickle_path,' \
+    ' expected_defconfig_path, expected_stree_pickle_path,' \
     ' expected_defconfig, expected_cmakecache, expected_filter_data,' \
-    ' expected_edt,' \
+    ' expected_stree,' \
     ' expected_logs, expected_return',
     TESTDATA_3,
     ids=['unit testing', 'domain', 'kconfig', 'no cache',
-         'no west options', 'no edt',
+         'no west options', 'no stree',
          'parse result', 'no parse result', 'no testsuite filter', 'parse err']
 )
 def test_filterbuilder_parse_generated(
@@ -656,15 +656,15 @@ def test_filterbuilder_parse_generated(
     sysbuild,
     do_find_cache,
     west_flash_options,
-    edt_exists,
+    stree_exists,
     parse_results,
     testsuite_filter,
     expected_defconfig_path,
-    expected_edt_pickle_path,
+    expected_stree_pickle_path,
     expected_defconfig,
     expected_cmakecache,
     expected_filter_data,
-    expected_edt,
+    expected_stree,
     expected_logs,
     expected_return
 ):
@@ -687,14 +687,14 @@ def test_filterbuilder_parse_generated(
         if filepath == expected_defconfig_path:
             rd = 'I am not a proper line\n' \
                  'CONFIG_FOO="no"'
-        elif filepath == expected_edt_pickle_path:
-            rd = b'dummy edt pickle contents'
+        elif filepath == expected_stree_pickle_path:
+            rd = b'dummy stree pickle contents'
         else:
             raise FileNotFoundError(errno.ENOENT,
                                     f'File {filepath} not mocked.')
         return mock.mock_open(read_data=rd)()
 
-    def mock_parser(filter, filter_data, edt):
+    def mock_parser(filter, filter_data, stree):
         assert filter_data == expected_filter_data
         if isinstance(parse_results, type) and \
            issubclass(parse_results, Exception):
@@ -702,7 +702,7 @@ def test_filterbuilder_parse_generated(
         return parse_results
 
     def mock_pickle(datafile):
-        assert datafile.read() == expected_edt
+        assert datafile.read() == expected_stree
         return mock.Mock()
 
     testsuite_mock = mock.Mock()
@@ -733,7 +733,7 @@ def test_filterbuilder_parse_generated(
          mock.patch('builtins.open', mock_open), \
          mock.patch('expr_parser.parse', mock_parser), \
          mock.patch('pickle.load', mock_pickle), \
-         mock.patch('os.path.exists', return_value=edt_exists), \
+         mock.patch('os.path.exists', return_value=stree_exists), \
          mock.patch('os.environ', environ_mock), \
          pytest.raises(expected_return) if \
              isinstance(parse_results, type) and \

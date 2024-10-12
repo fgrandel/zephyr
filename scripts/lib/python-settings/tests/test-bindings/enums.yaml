@@ -3,7 +3,7 @@
 
 description: Property enum test
 
-compatible: "enums"
+schema: "enums"
 
 properties:
   int-enum:

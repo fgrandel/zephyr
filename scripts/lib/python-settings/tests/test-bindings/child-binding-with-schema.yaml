@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
-description: child-binding with separate compatible than the parent
+description: child-binding with separate schema than the parent
 
-compatible: "top-binding-with-compat"
+schema: "top-binding-with-schema"
 
 child-binding:
-  compatible: child-compat
+  schema: child-schema
   description: child node
   properties:
     child-prop:

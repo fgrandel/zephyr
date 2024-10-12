@@ -2,670 +2,145 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Both, devicetree and configuration sources, represent abstract trees of nodes
-with named properties (key/value pairs). The configuration tree may interface to
-the devicetree via references. Both trees combined represent the Zephyr settings
-tree (ST). Properties from the devicetree are called hard(ware) settings while
-properties from the configuration tree are called soft(ware) settings.
-
 Bindings are YAML files that describe setting nodes and their properties. Nodes
-are mapped to bindings via their 'compatible = "..."' (devicetree) or 'schema =
-"..."' (configuration) property. A binding may impose restrictions on the bound
-node as well as on its child nodes via 'child-binding's.
+are mapped to bindings via their 'schema = "..."' property. A binding may
+impose restrictions on the bound node as well as on its child nodes via
+child bindings (ie. node properties).
+
+Note: While it is still possible to designate the schema of a binding file with
+the "compatible" property, this is considered deprecated usage. From a semantic
+perspective it's fine if a DT node is "compatible" to a schema, but a binding is
+not "compatible" to anything. So previous usage was a misnomer that may have
+been tolerable for devictree bindings but not for configuration schemas.
 
 Settings nodes will be validated against bindings and property types (string,
 array, integer, bool, ...). Allowable types and value ranges for properties will
 be derived from the corresponding property definitions in the binding.
-
-The combined information from DTS/configuration and binding sources will be made
-available through STNode (settings tree node) instances that together represent
-the STree (settings tree).
-
-An STNode from the devicetree (DTNode) represents hardware settings while an
-STNode from a configuration source (ConfigNode) contains software settings.
-
-The STree will be normalized in the sense that properties belonging to the same
-conceptual entity (i.e. functionally depending on the same entity ID or "key")
-will be kept in the same STNode.
 """
 
-from copy import deepcopy
-from dataclasses import dataclass
-from typing import (
-    Any,
-    Dict,
-    List,
-    NoReturn,
-    Optional,
-    Union,
-    TypeVar,
-    Generic,
-    TYPE_CHECKING,
-)
+from __future__ import annotations
+
+from collections import OrderedDict
+from collections.abc import Collection
 import os
 import re
-
 import yaml
-try:
-    # Use the C LibYAML parser if available, rather than the Python parser.
-    # This makes e.g. gen_defines.py more than twice as fast.
-    from yaml import CLoader as Loader
-except ImportError:
-    from yaml import Loader  # type: ignore
+
+from copy import deepcopy
+from typing import (
+    Any,
+    Generic,
+    NoReturn,
+    Optional,
+    TypeVar,
+    Union,
+    TYPE_CHECKING,
+)
+
+from settings.error import STBindingError
+from settings.yamlutil import _IncludeLoader
+
+#
+# Private constants
+#
+
+# Regular expression for non-alphanumeric-or-underscore characters.
+_NOT_ALPHANUM_OR_UNDERSCORE = re.compile(r"\W", re.ASCII)
 
 #
 # Public classes
 #
 
-class Binding:
-    """
-    Represents a parsed binding.
 
-    These attributes are available on Binding objects:
-
-    path:
-      The absolute path to the file defining the binding.
-
-    description:
-      The free-form description of the binding, or None.
-
-    compatible:
-      The compatible string the binding matches.
-
-      This may be None. For example, it's None when the Binding is inferred
-      from node properties. It can also be None for Binding objects created
-      using 'child-binding:' with no compatible.
-
-    prop2specs:
-      A dict mapping property names to PropertySpec objects
-      describing those properties' values.
-
-    specifier2cells:
-      A dict that maps specifier space names (like "gpio",
-      "clock", "pwm", etc.) to lists of cell names.
-
-      For example, if the binding YAML contains 'pin' and 'flags' cell names
-      for the 'gpio' specifier space, like this:
-
-          gpio-cells:
-          - pin
-          - flags
-
-      Then the Binding object will have a 'specifier2cells' attribute mapping
-      "gpio" to ["pin", "flags"]. A missing key should be interpreted as zero
-      cells.
-
-    raw:
-      The binding as an object parsed from YAML.
-
-    bus:
-      If nodes with this binding's 'compatible' describe a bus, a string
-      describing the bus type (like "i2c") or a list describing supported
-      protocols (like ["i3c", "i2c"]). None otherwise.
-
-      Note that this is the raw value from the binding where it can be
-      a string or a list. Use "buses" instead unless you need the raw
-      value, where "buses" is always a list.
-
-    buses:
-      Deprived property from 'bus' where 'buses' is a list of bus(es),
-      for example, ["i2c"] or ["i3c", "i2c"]. Or an empty list if there is
-      no 'bus:' in this binding.
-
-    on_bus:
-      If nodes with this binding's 'compatible' appear on a bus, a string
-      describing the bus type (like "i2c"). None otherwise.
-
-    child_binding:
-      If this binding describes the properties of child nodes, then
-      this is a Binding object for those children; it is None otherwise.
-      A Binding object's 'child_binding.child_binding' is not None if there
-      are multiple levels of 'child-binding' descriptions in the binding.
-    """
-
-    def __init__(
-        self,
-        path: Optional[str],
-        fname2path: Dict[str, str],
-        raw: Any = None,
-        require_compatible: bool = True,
-        require_description: bool = True,
-        inc_allowlist: Optional[List[str]] = None,
-        inc_blocklist: Optional[List[str]] = None,
-    ):
-        """
-        Binding constructor.
-
-        path:
-          Path to binding YAML file. May be None.
-
-        fname2path:
-          Map from include files to their absolute paths. Must
-          not be None, but may be empty.
-
-        raw:
-          Optional raw content in the binding.
-          This does not have to have any "include:" lines resolved.
-          May be left out, in which case 'path' is opened and read.
-          This can be used to resolve child bindings, for example.
-
-        require_compatible:
-          If True, it is an error if the binding does not contain a
-          "compatible:" line. If False, a missing "compatible:" is
-          not an error. Either way, "compatible:" must be a string
-          if it is present in the binding.
-
-        require_description:
-          If True, it is an error if the binding does not contain a
-          "description:" line. If False, a missing "description:" is
-          not an error. Either way, "description:" must be a string
-          if it is present in the binding.
-
-        inc_allowlist:
-          The property-allowlist filter set by including bindings.
-
-        inc_blocklist:
-          The property-blocklist filter set by including bindings.
-        """
-        self.path: Optional[str] = path
-        self._fname2path: Dict[str, str] = fname2path
-
-        self._inc_allowlist: Optional[List[str]] = inc_allowlist
-        self._inc_blocklist: Optional[List[str]] = inc_blocklist
-
-        if raw is None:
-            if path is None:
-                _err("you must provide either a 'path' or a 'raw' argument")
-            with open(path, encoding="utf-8") as f:
-                raw = yaml.load(f, Loader=_BindingLoader)
-
-        # Get the properties this binding modifies
-        # before we merge the included ones.
-        last_modified_props = list(raw.get("properties", {}).keys())
-
-        # Map property names to their specifications:
-        # - first, _merge_includes() will recursively populate prop2specs with
-        #   the properties specified by the included bindings
-        # - eventually, we'll update prop2specs with the properties
-        #   this binding itself defines or modifies
-        self.prop2specs: Dict[str, "PropertySpec"] = {}
-
-        # Merge any included files into self.raw. This also pulls in
-        # inherited child binding definitions, so it has to be done
-        # before initializing those.
-        self.raw: dict = self._merge_includes(raw, self.path)
-
-        # Recursively initialize any child bindings. These don't
-        # require a 'compatible' or 'description' to be well defined,
-        # but they must be dicts.
-        if "child-binding" in raw:
-            if not isinstance(raw["child-binding"], dict):
-                _err(
-                    f"malformed 'child-binding:' in {self.path}, "
-                    "expected a binding (dictionary with keys/values)"
-                )
-            self.child_binding: Optional["Binding"] = Binding(
-                path,
-                fname2path,
-                raw=raw["child-binding"],
-                require_compatible=False,
-                require_description=False,
-            )
-        else:
-            self.child_binding = None
-
-        # Make sure this is a well defined object.
-        self._check(require_compatible, require_description)
-
-        # Update specs with the properties this binding defines or modifies.
-        for prop_name in last_modified_props:
-            self.prop2specs[prop_name] = PropertySpec(prop_name, self)
-
-        # Initialize look up tables.
-        self.specifier2cells: Dict[str, List[str]] = {}
-        for key, val in self.raw.items():
-            if key.endswith("-cells"):
-                self.specifier2cells[key[: -len("-cells")]] = val
-
-    def __repr__(self) -> str:
-        if self.compatible:
-            compat = f" for compatible '{self.compatible}'"
-        else:
-            compat = ""
-        basename = os.path.basename(self.path or "")
-        return f"<Binding {basename}" + compat + ">"
-
-    @property
-    def description(self) -> Optional[str]:
-        "See the class docstring"
-        return self.raw.get("description")
-
-    @property
-    def compatible(self) -> Optional[str]:
-        "See the class docstring"
-        return self.raw.get("compatible")
-
-    @property
-    def bus(self) -> Union[None, str, List[str]]:
-        "See the class docstring"
-        return self.raw.get("bus")
-
-    @property
-    def buses(self) -> List[str]:
-        "See the class docstring"
-        if self.raw.get("bus") is not None:
-            return self._buses
-        else:
-            return []
-
-    @property
-    def on_bus(self) -> Optional[str]:
-        "See the class docstring"
-        return self.raw.get("on-bus")
-
-    def _merge_includes(self, raw: dict, binding_path: Optional[str]) -> dict:
-        # Constructor helper. Merges included files in
-        # 'raw["include"]' into 'raw' using 'self._include_paths' as a
-        # source of include files, removing the "include" key while
-        # doing so.
-        #
-        # This treats 'binding_path' as the binding file being built up
-        # and uses it for error messages.
-
-        if "include" not in raw:
-            return raw
-
-        include = raw.pop("include")
-
-        # First, merge the included files together. If more than one included
-        # file has a 'required:' for a particular property, OR the values
-        # together, so that 'required: true' wins.
-
-        merged: Dict[str, Any] = {}
-
-        if isinstance(include, str):
-            # Simple scalar string case
-            # Load YAML file and register property specs into prop2specs.
-            inc_raw = self._load_raw(include, self._inc_allowlist, self._inc_blocklist)
-
-            _merge_props(merged, inc_raw, None, binding_path, False)
-        elif isinstance(include, list):
-            # List of strings and maps. These types may be intermixed.
-            for elem in include:
-                if isinstance(elem, str):
-                    # Load YAML file and register property specs into prop2specs.
-                    inc_raw = self._load_raw(
-                        elem, self._inc_allowlist, self._inc_blocklist
-                    )
-
-                    _merge_props(merged, inc_raw, None, binding_path, False)
-                elif isinstance(elem, dict):
-                    name = elem.pop("name", None)
-
-                    # Merge this include property-allowlist filter
-                    # with filters from including bindings.
-                    allowlist = elem.pop("property-allowlist", None)
-                    if allowlist is not None:
-                        if self._inc_allowlist:
-                            allowlist.extend(self._inc_allowlist)
-                    else:
-                        allowlist = self._inc_allowlist
-
-                    # Merge this include property-blocklist filter
-                    # with filters from including bindings.
-                    blocklist = elem.pop("property-blocklist", None)
-                    if blocklist is not None:
-                        if self._inc_blocklist:
-                            blocklist.extend(self._inc_blocklist)
-                    else:
-                        blocklist = self._inc_blocklist
-
-                    child_filter = elem.pop("child-binding", None)
-
-                    if elem:
-                        # We've popped out all the valid keys.
-                        _err(
-                            f"'include:' in {binding_path} should not have "
-                            f"these unexpected contents: {elem}"
-                        )
-
-                    _check_include_dict(
-                        name, allowlist, blocklist, child_filter, binding_path
-                    )
-
-                    # Load YAML file, and register (filtered) property specs
-                    # into prop2specs.
-                    contents = self._load_raw(name, allowlist, blocklist, child_filter)
-
-                    _merge_props(merged, contents, None, binding_path, False)
-                else:
-                    _err(
-                        f"all elements in 'include:' in {binding_path} "
-                        "should be either strings or maps with a 'name' key "
-                        "and optional 'property-allowlist' or "
-                        f"'property-blocklist' keys, but got: {elem}"
-                    )
-        else:
-            # Invalid item.
-            _err(
-                f"'include:' in {binding_path} "
-                f"should be a string or list, but has type {type(include)}"
-            )
-
-        # Next, merge the merged included files into 'raw'. Error out if
-        # 'raw' has 'required: false' while the merged included files have
-        # 'required: true'.
-
-        _merge_props(raw, merged, None, binding_path, check_required=True)
-
-        return raw
-
-    def _load_raw(
-        self,
-        fname: str,
-        allowlist: Optional[List[str]] = None,
-        blocklist: Optional[List[str]] = None,
-        child_filter: Optional[dict] = None,
-    ) -> dict:
-        # Returns the contents of the binding given by 'fname' after merging
-        # any bindings it lists in 'include:' into it, according to the given
-        # property filters.
-        #
-        # Will also register the (filtered) included property specs
-        # into prop2specs.
-
-        path = self._fname2path.get(fname)
-
-        if not path:
-            _err(f"'{fname}' not found")
-
-        with open(path, encoding="utf-8") as f:
-            contents = yaml.load(f, Loader=_BindingLoader)
-            if not isinstance(contents, dict):
-                _err(f"{path}: invalid contents, expected a mapping")
-
-        # Apply constraints to included YAML contents.
-        _filter_properties(contents, allowlist, blocklist, child_filter, self.path)
-
-        # Register included property specs.
-        self._add_included_prop2specs(fname, contents, allowlist, blocklist)
-
-        return self._merge_includes(contents, path)
-
-    def _add_included_prop2specs(
-        self,
-        fname: str,
-        contents: dict,
-        allowlist: Optional[List[str]] = None,
-        blocklist: Optional[List[str]] = None,
-    ) -> None:
-        # Registers the properties specified by an included binding file
-        # into the properties this binding supports/requires (aka prop2specs).
-        #
-        # Consider "this" binding B includes I1 which itself includes I2.
-        #
-        # We assume to be called in that order:
-        # 1) _add_included_prop2spec(B, I1)
-        # 2) _add_included_prop2spec(B, I2)
-        #
-        # Where we don't want I2 "taking ownership" for properties
-        # modified by I1.
-        #
-        # So we:
-        # - first create a binding that represents the included file
-        # - then add the property specs defined by this binding to prop2specs,
-        #   without overriding the specs modified by an including binding
-        #
-        # Note: Unfortunately, we can't cache these base bindings,
-        # as a same YAML file may be included with different filters
-        # (property-allowlist and such), leading to different contents.
-
-        inc_binding = Binding(
-            self._fname2path[fname],
-            self._fname2path,
-            contents,
-            require_compatible=False,
-            require_description=False,
-            # Recursively pass filters to included bindings.
-            inc_allowlist=allowlist,
-            inc_blocklist=blocklist,
-        )
-
-        for prop, spec in inc_binding.prop2specs.items():
-            if prop not in self.prop2specs:
-                self.prop2specs[prop] = spec
-
-    def _check(self, require_compatible: bool, require_description: bool):
-        # Does sanity checking on the binding.
-
-        raw = self.raw
-
-        if "compatible" in raw:
-            compatible = raw["compatible"]
-            if not isinstance(compatible, str):
-                _err(
-                    f"malformed 'compatible: {compatible}' "
-                    f"field in {self.path} - "
-                    f"should be a string, not {type(compatible).__name__}"
-                )
-        elif require_compatible:
-            _err(f"missing 'compatible' in {self.path}")
-
-        if "description" in raw:
-            description = raw["description"]
-            if not isinstance(description, str) or not description:
-                _err(f"malformed or empty 'description' in {self.path}")
-        elif require_description:
-            _err(f"missing 'description' in {self.path}")
-
-        # Allowed top-level keys. The 'include' key should have been
-        # removed by _load_raw() already.
-        ok_top = {
-            "description",
-            "compatible",
-            "bus",
-            "on-bus",
-            "properties",
-            "child-binding",
-        }
-
-        # Descriptive errors for legacy bindings.
-        legacy_errors = {
-            "#cells": "expected *-cells syntax",
-            "child": "use 'bus: <bus>' instead",
-            "child-bus": "use 'bus: <bus>' instead",
-            "parent": "use 'on-bus: <bus>' instead",
-            "parent-bus": "use 'on-bus: <bus>' instead",
-            "sub-node": "use 'child-binding' instead",
-            "title": "use 'description' instead",
-        }
-
-        for key in raw:
-            if key in legacy_errors:
-                _err(f"legacy '{key}:' in {self.path}, {legacy_errors[key]}")
-
-            if key not in ok_top and not key.endswith("-cells"):
-                _err(
-                    f"unknown key '{key}' in {self.path}, "
-                    "expected one of {', '.join(ok_top)}, or *-cells"
-                )
-
-        if "bus" in raw:
-            bus = raw["bus"]
-            if not isinstance(bus, str) and (
-                not isinstance(bus, list)
-                and not all(isinstance(elem, str) for elem in bus)
-            ):
-                _err(
-                    f"malformed 'bus:' value in {self.path}, "
-                    "expected string or list of strings"
-                )
-
-            if isinstance(bus, list):
-                self._buses = bus
-            else:
-                # Convert bus into a list
-                self._buses = [bus]
-
-        if "on-bus" in raw and not isinstance(raw["on-bus"], str):
-            _err(f"malformed 'on-bus:' value in {self.path}, " "expected string")
-
-        self._check_properties()
-
-        for key, val in raw.items():
-            if key.endswith("-cells"):
-                if not isinstance(val, list) or not all(
-                    isinstance(elem, str) for elem in val
-                ):
-                    _err(
-                        f"malformed '{key}:' in {self.path}, "
-                        "expected a list of strings"
-                    )
-
-    def _check_properties(self) -> None:
-        # _check() helper for checking the contents of 'properties:'.
-
-        raw = self.raw
-
-        if "properties" not in raw:
-            return
-
-        ok_prop_keys = {
-            "description",
-            "type",
-            "required",
-            "enum",
-            "const",
-            "default",
-            "deprecated",
-            "specifier-space",
-        }
-
-        for prop_name, options in raw["properties"].items():
-            for key in options:
-                if key not in ok_prop_keys:
-                    _err(
-                        f"unknown setting '{key}' in "
-                        f"'properties: {prop_name}: ...' in {self.path}, "
-                        f"expected one of {', '.join(ok_prop_keys)}"
-                    )
-
-            _check_prop_by_type(prop_name, options, self.path)
-
-            for true_false_opt in ["required", "deprecated"]:
-                if true_false_opt in options:
-                    option = options[true_false_opt]
-                    if not isinstance(option, bool):
-                        _err(
-                            f"malformed '{true_false_opt}:' setting '{option}' "
-                            f"for '{prop_name}' in 'properties' in {self.path}, "
-                            "expected true/false"
-                        )
-
-            if options.get("deprecated") and options.get("required"):
-                _err(
-                    f"'{prop_name}' in 'properties' in {self.path} should not "
-                    "have both 'deprecated' and 'required' set"
-                )
-
-            if "description" in options and not isinstance(options["description"], str):
-                _err(
-                    "missing, malformed, or empty 'description' for "
-                    f"'{prop_name}' in 'properties' in {self.path}"
-                )
-
-            if "enum" in options and not isinstance(options["enum"], list):
-                _err(f"enum in {self.path} for property '{prop_name}' " "is not a list")
-
-
-class PropertySpec:
+class _STPropertySpec:
     """
     Represents a "property specification", i.e. the description of a
     property provided by a binding file, like its type and description.
 
-    These attributes are available on PropertySpec objects:
-
-    binding:
-      The Binding object which defined this property.
+    These init attributes are available on PropertySpec objects:
 
     name:
       The property's name.
 
+    binding:
+      The Binding object which defined this property.
+
     path:
-      The file where this property was defined. In case a binding includes
-      other bindings, this is the file where the property was last modified.
+        The file where this property was defined. In case a binding includes
+        other bindings, this is the file where the property was last modified.
 
-    type:
-      The type of the property as a string, as given in the binding.
-
-    description:
-      The free-form description of the property as a string, or None.
-
-    enum:
-      A list of values the property may take as given in the binding, or None.
-
-    enum_tokenizable:
-      True if enum is not None and all the values in it are tokenizable;
-      False otherwise.
-
-      A property must have string or string-array type and an "enum:" in its
-      binding to be tokenizable. Additionally, the "enum:" values must be
-      unique after converting all non-alphanumeric characters to underscores
-      (so "foo bar" and "foo_bar" in the same "enum:" would not be
-      tokenizable).
-
-    enum_upper_tokenizable:
-      Like 'enum_tokenizable', with the additional restriction that the
-      "enum:" values must be unique after uppercasing and converting
-      non-alphanumeric characters to underscores.
-
-    const:
-      The property's constant value as given in the binding, or None.
-
-    default:
-      The property's default value as given in the binding, or None.
-
-    deprecated:
-      True if the property is deprecated; False otherwise.
-
-    required:
-      True if the property is marked required; False otherwise.
-
-    specifier_space:
-      The specifier space for the property as given in the binding, or None.
+    Also see property docstrings.
     """
 
-    def __init__(self, name: str, binding: Binding):
-        self.binding: Binding = binding
+    def __init__(
+        self,
+        name: str,
+        binding: _STBinding,
+        path: str,
+        prop_yaml_source: dict[str, Any],
+    ):
+        """
+        _STPropertySpec constructor.
+
+        Constructor arguments:
+
+        name:
+          The property's name.
+
+        binding:
+          The Binding object which defined this property.
+
+        path:
+          The file where this property was defined. In case a binding includes
+          other bindings, this is the file where the property was last modified.
+
+        prop_yaml_source:
+          The YAML snippet that defines the property. This is the mapping
+          from the binding that is assigned to the property name.
+
+        Also see property docstrings.
+        """
         self.name: str = name
-        self._raw: Dict[str, Any] = self.binding.raw["properties"][name]
+        self.binding: _STBinding = binding
+        self.path: str = path
+        self._yaml_source: dict[str, Any] = prop_yaml_source
 
     def __repr__(self) -> str:
-        return f"<PropertySpec {self.name} type '{self.type}'>"
-
-    @property
-    def path(self) -> Optional[str]:
-        "See the class docstring"
-        return self.binding.path
+        return f"<PropertySpec {self.name} type '{self.type}' in '{self.path}'>"
 
     @property
     def type(self) -> str:
-        "See the class docstring"
-        return self._raw["type"]
+        """
+        The type of the property as a string, as given in the binding.
+        """
+        return self._yaml_source["type"]
 
     @property
     def description(self) -> Optional[str]:
-        "See the class docstring"
-        return self._raw.get("description")
+        """
+        The free-form description of the property as a string, or None.
+        """
+        return self._yaml_source.get("description")
 
     @property
     def enum(self) -> Optional[list]:
-        "See the class docstring"
-        return self._raw.get("enum")
+        """
+        A list of values the property may take as given in the binding, or None.
+        """
+        return self._yaml_source.get("enum")
 
     @property
     def enum_tokenizable(self) -> bool:
-        "See the class docstring"
+        """
+        True if enum is not None and all the values in it are tokenizable;
+        False otherwise.
+
+        A property must have string or string-array type and an "enum:" in its
+        binding to be tokenizable. Additionally, the "enum:" values must be
+        unique after converting all non-alphanumeric characters to underscores
+        (so "foo bar" and "foo_bar" in the same "enum:" would not be
+        tokenizable).
+        """
         if not hasattr(self, "_enum_tokenizable"):
             if self.type not in {"string", "string-array"} or self.enum is None:
                 self._enum_tokenizable = False
@@ -684,7 +159,11 @@ class PropertySpec:
 
     @property
     def enum_upper_tokenizable(self) -> bool:
-        "See the class docstring"
+        """
+        Like 'enum_tokenizable', with the additional restriction that the
+        "enum:" values must be unique after uppercasing and converting
+        non-alphanumeric characters to underscores.
+        """
         if not hasattr(self, "_enum_upper_tokenizable"):
             if not self.enum_tokenizable:
                 self._enum_upper_tokenizable = False
@@ -695,495 +174,946 @@ class PropertySpec:
         return self._enum_upper_tokenizable
 
     @property
-    def const(self) -> Union[None, int, List[int], str, List[str]]:
-        "See the class docstring"
-        return self._raw.get("const")
+    def const(self) -> Union[None, int, list[int], str, list[str]]:
+        """
+        The property's constant value as given in the binding, or None.
+        """
+        return self._yaml_source.get("const")
 
     @property
-    def default(self) -> Union[None, int, List[int], str, List[str]]:
-        "See the class docstring"
-        return self._raw.get("default")
+    def default(
+        self,
+    ) -> Union[None, int, list[int], str, list[str], float, list[float]]:
+        """
+        The property's default value as given in the binding, or None.
+        """
+        return self._yaml_source.get("default")
 
     @property
     def required(self) -> bool:
-        "See the class docstring"
-        return self._raw.get("required", False)
+        """
+        True if the property is marked required; False otherwise.
+        """
+        return self._yaml_source.get("required", False)
 
     @property
     def deprecated(self) -> bool:
-        "See the class docstring"
-        return self._raw.get("deprecated", False)
-
-    @property
-    def specifier_space(self) -> Optional[str]:
-        "See the class docstring"
-        return self._raw.get("specifier-space")
+        """
+        True if the property is deprecated; False otherwise.
+        """
+        return self._yaml_source.get("deprecated", False)
 
 
-V = TypeVar("V")
-N = TypeVar("N")
+S = TypeVar("S", bound="_STPropertySpec")
+B = TypeVar("B", bound="_STBinding")
 
 
-@dataclass
-class Property(Generic[V, N]):
+class _STBinding(Generic[S, B]):
     """
-    Represents a property on a Node, as set in its ST node and with
-    additional info from the 'properties:' section of the binding.
+    Represents a parsed binding.
 
-    Only properties mentioned in 'properties:' get created. Properties of type
-    'compound' currently do not get Property instances, as it's not clear
-    what to generate for them.
+    These init attributes are available on Binding objects:
 
-    These attributes are available on Property objects. Several are
-    just convenience accessors for attributes on the PropertySpec object
-    accessible via the 'spec' attribute:
+    path:
+      The absolute path to the file defining the binding.
 
-    spec:
-      The PropertySpec object which specifies this property.
+    prop2specs:
+      A dict mapping property names to a tuple of a compiled regular expression
+      for the property name pattern and a PropertySpec instance describing the
+      properties' values.
 
-    val:
-      The value of the property, with the format determined by spec.type, which
-      comes from the 'type:' string in the binding. See subclasses for specific
-      conversion rules.
+    prop2bindings:
+      A dict mapping that maps the child node name pattern to a tuple of a
+      compiled regular expression for the child node name pattern and all
+      binding objects for those children. The deprecated "child-binding" node
+      will be represented with a ".*" key.
 
-    node:
-      The Node instance the property is on
+    yaml_source:
+      The binding as a merged and filtered object parsed from YAML.
 
-    name:
-      Convenience for spec.name.
-
-    description:
-      Convenience for spec.description with leading and trailing whitespace
-      (including newlines) removed. May be None.
-
-    type:
-      Convenience for spec.type.
-
-    val_as_tokens:
-      The value of the property as a list of tokens, i.e. with non-alphanumeric
-      characters replaced with underscores. This is only safe to access
-      if 'spec.enum_tokenizable' returns True.
-
-    enum_indices:
-      A list of indices of 'val' in 'spec.enum' (which comes from the 'enum:'
-      list in the binding), or None if spec.enum is None.
+    Also see property docstrings.
     """
 
-    spec: PropertySpec
-    val: V
-    node: N
+    CHILD_BINDING_REGEX = re.compile(".*")
 
-    @property
-    def name(self) -> str:
-        "See the class docstring"
-        return self.spec.name
+    def __init__(
+        self,
+        path: str,
+        yaml_source: Any = None,
+        require_schema: bool = True,
+        require_description: bool = True,
+        allowlist: Optional[list[str]] = None,
+        blocklist: Optional[list[str]] = None,
+        fname2path: dict[str, str] = {},
+        is_child_binding: bool = False,
+    ):
+        """
+        Binding constructor.
+
+        path:
+          Path to binding YAML file. May be None.
+
+        yaml_source:
+          Optional raw yaml source for the binding. This can be used to resolve
+          child bindings, for example. If not given, 'path' is mandatory and
+          will be opened and read.
+
+          The source may contain unresolved "include:" lines.
+
+          Note: The 'yaml_source' attribute will be destructively modified by
+          the constructor when resolving included files. Do not modify it after
+          construction.
+
+        require_schema:
+          If True, it is an error if the binding does not contain a "schema:"
+          line. If False, a missing "schema:" is not an error. Either way,
+          "schema:" must be a string if it is present in the binding.
+
+        require_description:
+          If True, it is an error if the binding does not contain a
+          "description:" line. If False, a missing "description:" is
+          not an error. Either way, "description:" must be a string
+          if it is present in the binding.
+
+        allowlist:
+          The property-allowlist filter set by including bindings.
+
+        blocklist:
+          The property-blocklist filter set by including bindings.
+
+        fname2path:
+          Map from include files to their absolute paths. Must
+          not be None, but may be empty.
+
+        is_child_binding:
+          True if this binding is a child binding (i.e. comes from a property
+          with type "node"), False otherwise.
+        """
+        self.path: str = path
+
+        self._fname2path: dict[str, str] = fname2path
+        self._is_child_binding = is_child_binding
+
+        if path is None:
+            _err("you must provide a 'path'")
+
+        if yaml_source is None:
+            with open(path, encoding="utf-8") as f:
+                yaml_source = yaml.load(f, Loader=_IncludeLoader)
+
+        self._normalize_child_binding(yaml_source)
+
+        self.prop2specs: OrderedDict[str, tuple[re.Pattern, S]] = OrderedDict()
+        self.prop2bindings: OrderedDict[str, tuple[re.Pattern, list[B]]] = OrderedDict()
+
+        self._merge_includes(yaml_source, self.path, allowlist, blocklist)
+
+        self.yaml_source: OrderedDict[str, Any] = yaml_source
+
+        top_level_props = {
+            self.schema_prop_name,
+            "description",
+            "properties",
+        }
+
+        if self._is_child_binding:
+            top_level_props.add("type")
+
+        legacy_errors = {
+            "sub-node": "use a property with 'type: node' instead",
+            "title": "use 'description' instead",
+        }
+
+        # Make sure this is a well defined object.
+        self._check(require_schema, require_description, top_level_props, legacy_errors)
+
+    def __repr__(self) -> str:
+        schema_name = f" for schema '{self.schema}'" if self.schema else ""
+        variant_name = f"  on '{self.variant}'" if self.variant else ""
+        basename = os.path.basename(self.path or "")
+        return f"<Binding {basename}" + schema_name + variant_name + ">"
+
+    def __hash__(self):
+        return hash((self.schema, self.variant))
+
+    def __eq__(self, other):
+        if not isinstance(other, _STBinding):
+            return False
+        return (self.schema, self.variant) == (other.schema, other.variant)
 
     @property
     def description(self) -> Optional[str]:
-        "See the class docstring"
-        return self.spec.description.strip() if self.spec.description else None
+        "The free-form description of the binding, or None."
+        return self.yaml_source.get("description")
 
     @property
-    def type(self) -> str:
-        "See the class docstring"
-        return self.spec.type
+    def schema_prop_name(self) -> str:
+        return "schema"
 
     @property
-    def val_as_tokens(self) -> List[str]:
-        "See the class docstring"
-        ret = []
-        for subval in self.val if isinstance(self.val, list) else [self.val]:
-            assert isinstance(subval, str)
-            ret.append(str_as_token(subval))
-        return ret
+    def schema(self) -> Optional[str]:
+        """
+        The name of the schema that the binding defines and validates.
+
+        This may be None. For example, it's None when the Binding is inferred from
+        node properties. It can also be None for Binding objects created from an
+        anonymous 'child-binding:' belonging to a named parent binding.
+        """
+        return self.yaml_source.get(self.schema_prop_name)
 
     @property
-    def enum_indices(self) -> Optional[List[int]]:
-        "See the class docstring"
-        enum = self.spec.enum
-        val = self.val if isinstance(self.val, list) else [self.val]
-        return [enum.index(subval) for subval in val] if enum else None
+    def variant(self) -> Optional[str]:
+        """
+        If nodes with this binding's 'schema' appear on a bus, a string describing
+        the bus type (like "i2c"). None otherwise.
+        """
+        return None
 
+    @classmethod
+    def _instantiate(
+        cls: type[B],
+        path: str,
+        yaml_source: Optional[OrderedDict[str, Any]] = None,
+        require_schema: bool = True,
+        require_description: bool = True,
+        allowlist: Optional[list[str]] = None,
+        blocklist: Optional[list[str]] = None,
+        fname2path: dict[str, str] = {},
+        is_child_binding: bool = False,
+    ) -> B:
+        # Instantiates the correct binding parent class. See the __init__()
+        # docstring for parameter descriptions.
+        return cls(
+            path=path,
+            yaml_source=yaml_source,
+            require_schema=require_schema,
+            require_description=require_description,
+            allowlist=allowlist,
+            blocklist=blocklist,
+            fname2path=fname2path,
+            is_child_binding=is_child_binding,
+        )
 
-class BindingError(Exception):
-    "Exception raised for binding-related errors"
+    def _merge_includes(
+        self,
+        yaml_source: OrderedDict[str, Any],
+        path: str,
+        allowlist: Optional[list[str]],
+        blocklist: Optional[list[str]],
+    ) -> None:
+        # Destructively merges included files in 'yaml_source["include"]' into
+        # 'yaml_source' using 'self._include_paths' as a source of include
+        # files, removing the "include" key while doing so.
+        #
+        # This treats 'binding_path' as the binding file being built up and uses
+        # it for error messages.
+        #
+        # Properties specifications being defined in yaml_source and its included
+        # files are registered in prop2specs.
+        #
+        # Merging advances depth first, this means that property specifications
+        # defined by includes are overwritten by the properties defined in the
+        # binding file itself.
 
+        # We need to instantiate prop specs after we filtered the 'yaml_source'
+        # but before we resolve includes. This is ensures that we don't override
+        # prop specs from included files with the path from the current file.
+        prop_specs = self._instantiate_prop_specs(yaml_source.get("properties"), path)
+        child_bindings = self._instantiate_child_bindings(
+            yaml_source.get("properties"), allowlist, blocklist, path
+        )
 
-#
-# Public global functions
-#
+        if "include" in yaml_source:
+            merged_yaml: OrderedDict[str, Any] = OrderedDict()
+            includes = yaml_source.pop("include")
+            if not isinstance(includes, (str, list)):
+                # Invalid item.
+                _err(
+                    f"'include:' in {path} "
+                    f"should be a string or list, but has type {type(includes)}"
+                )
 
+            # First, merge the included yaml files together.
 
-def bindings_from_paths(
-    yaml_paths: List[str], ignore_errors: bool = False
-) -> List[Binding]:
-    """
-    Get a list of Binding objects from the yaml files 'yaml_paths'.
+            # List of strings and maps. These types may be intermixed.
+            includes = [includes] if isinstance(includes, str) else includes
+            for elem in includes:
+                if not isinstance(elem, (str, dict)):
+                    _err(
+                        f"all elements in 'include:' in {path} "
+                        "should be either strings or maps with a 'name' key "
+                        "and optional 'property-allowlist' or "
+                        f"'property-blocklist' keys, but got: {elem}"
+                    )
 
-    If 'ignore_errors' is True, YAML files that cause an BindingError when
-    loaded are ignored. (No other exception types are silenced.)
-    """
+                if isinstance(elem, str):
+                    # Load YAML file and register property specs into prop2specs.
+                    include_fname = elem
+                    merged_allowlist = allowlist
+                    merged_blocklist = blocklist
+                    child_binding_filter = None
+                else:
+                    include_fname = elem.pop("name", None)
 
-    ret = []
-    fname2path = {os.path.basename(path): path for path in yaml_paths}
-    for path in yaml_paths:
-        try:
-            ret.append(Binding(path, fname2path))
-        except BindingError:
-            if ignore_errors:
+                    def merge_list(
+                        key: str, previous_list: Optional[list[str]]
+                    ) -> Optional[list[str]]:
+                        additional_list: Optional[list[str]] = elem.pop(key, None)
+                        if additional_list is not None and not isinstance(
+                            additional_list, list
+                        ):
+                            _err(f"'{key}' value in {path} should be a list")
+                        return (
+                            previous_list
+                            if additional_list is None
+                            else additional_list + (previous_list or [])
+                        )
+
+                    merged_allowlist = merge_list("property-allowlist", allowlist)
+                    merged_blocklist = merge_list("property-blocklist", blocklist)
+
+                    child_binding_filter = elem.pop("child-binding", None)
+
+                    if elem:
+                        # We've popped out all the valid keys.
+                        _err(
+                            f"'include:' in {path} should not have "
+                            f"these unexpected contents: {elem}"
+                        )
+
+                    _STBinding._check_include_dict(
+                        include_fname,
+                        merged_allowlist,
+                        merged_blocklist,
+                        child_binding_filter,
+                        path,
+                    )
+
+                # Load YAML file, and register (filtered) property specs
+                # into prop2specs.
+                include_path = self._fname2path.get(include_fname)
+                if not include_path:
+                    _err(f"'{include_path}' not found")
+
+                filtered_include_yaml_source = self._load_and_filter_include(
+                    include_path,
+                    merged_allowlist,
+                    merged_blocklist,
+                    child_binding_filter,
+                )
+
+                _STBinding._merge_yaml(
+                    path,
+                    merged_yaml,
+                    filtered_include_yaml_source,
+                    check_required=False,
+                )
+
+            _STBinding._merge_yaml(path, yaml_source, merged_yaml, check_required=True)
+
+        # Override included prop specs and bindings with the ones defined in the
+        # current binding file.
+        #
+        # Note: self._load_and_filter_include() recurses depth first into this
+        # function, so this code will be executed for included files before
+        # their parents.  This ensures that property specs from files further
+        # down in the include hierarchy will be overridden by their parents'
+        # property specs.
+        self.prop2specs.update(prop_specs)
+        for prop_name, child_binding in child_bindings.items():
+            if prop_name in self.prop2bindings:
+                self.prop2bindings[prop_name][1].append(child_binding[1])
+            else:
+                self.prop2bindings[prop_name] = (child_binding[0], [child_binding[1]])
+
+    def _load_and_filter_include(
+        self,
+        path: str,
+        allowlist: Optional[list[str]],
+        blocklist: Optional[list[str]],
+        child_binding_filter: Optional[dict],
+    ) -> OrderedDict[str, Any]:
+        # Returns the filtered contents of the binding given by 'fname' after
+        # recursively merging and filtering any bindings it lists in 'include:'
+        # into it, according to the given property filters.
+        #
+        # Will also register the (filtered) included property specs
+        # into prop2specs.
+
+        with open(path, encoding="utf-8") as f:
+            yaml_source: OrderedDict[str, Any] = yaml.load(f, Loader=_IncludeLoader)
+            if not isinstance(yaml_source, dict):
+                _err(f"{path}: invalid contents, expected a mapping")
+
+        self._normalize_child_binding(yaml_source)
+
+        # Apply constraints to included YAML contents.
+        properties = yaml_source.get("properties")
+        if TYPE_CHECKING:
+            assert isinstance(properties, OrderedDict)
+        _STBinding._filter_properties(
+            self.path,
+            properties,
+            allowlist,
+            blocklist,
+            child_binding_filter,
+        )
+
+        self._merge_includes(yaml_source, path, allowlist, blocklist)
+
+        return yaml_source
+
+    def _normalize_child_binding(self, yaml_source: dict) -> None:
+        # Recursively normalize legacy child-binding properties. This must be
+        # called right after loading the source, before the child bindings are
+        # being filtered.
+        if "child-binding" in yaml_source:
+            if not isinstance(yaml_source["child-binding"], dict):
+                _err(
+                    f"malformed 'child-binding:' in {self.path}, "
+                    "expected a binding (dictionary with keys/values)"
+                )
+            child_binding_yaml = yaml_source.pop("child-binding")
+            self._normalize_child_binding(child_binding_yaml)
+            child_binding_yaml["type"] = "node"
+            if "properties" not in yaml_source:
+                yaml_source["properties"] = {}
+            yaml_source["properties"][".*"] = child_binding_yaml
+
+    @staticmethod
+    def _check_include_dict(
+        name: Optional[str],
+        allowlist: Optional[list[str]],
+        blocklist: Optional[list[str]],
+        child_binding_filter: Optional[dict],
+        binding_path: Optional[str],
+    ) -> None:
+        # Check that an 'include:' named 'name' with property-allowlist
+        # 'allowlist', property-blocklist 'blocklist', and child-binding filter
+        # 'child_binding_filter' has valid structure.
+
+        if name is None:
+            _err(f"'include:' element in {binding_path} " "should have a 'name' key")
+
+        if allowlist is not None and blocklist is not None:
+            _err(
+                f"'include:' of file '{name}' in {binding_path} "
+                "should not specify both 'property-allowlist:' "
+                "and 'property-blocklist:'"
+            )
+
+        child_binding_filter = deepcopy(child_binding_filter)
+        while child_binding_filter is not None:
+            child_binding_allowlist: Optional[list[str]] = child_binding_filter.pop(
+                "property-allowlist", None
+            )
+            child_binding_blocklist: Optional[list[str]] = child_binding_filter.pop(
+                "property-blocklist", None
+            )
+            next_child_binding: Optional[dict] = child_binding_filter.pop(
+                "child-binding", None
+            )
+
+            if child_binding_filter:
+                # We've popped out all the valid keys.
+                _err(
+                    f"'include:' of file '{name}' in {binding_path} "
+                    "should not have these unexpected contents in a "
+                    f"'child-binding': {child_binding_filter}"
+                )
+
+            if (
+                child_binding_allowlist is not None
+                and child_binding_blocklist is not None
+            ):
+                _err(
+                    f"'include:' of file '{name}' in {binding_path} "
+                    "should not specify both 'property-allowlist:' and "
+                    "'property-blocklist:' in a 'child-binding:'"
+                )
+
+            child_binding_filter = next_child_binding
+
+    @classmethod
+    def _filter_properties(
+        cls,
+        path: str,
+        props_yaml: Optional[OrderedDict[str, Any]],
+        allowlist: Optional[list[str]],
+        blocklist: Optional[list[str]],
+        child_binding_filter: Optional[dict],
+    ) -> None:
+        # Destructively modifies 'yaml_source["properties"]' if they exist,
+        # according to 'allowlist', 'blocklist', and 'child_binding_filter'.
+
+        _STBinding._check_prop_filter("property-allowlist", allowlist, path)
+        _STBinding._check_prop_filter("property-blocklist", blocklist, path)
+
+        if not props_yaml:
+            return
+
+        # filter props
+        props_to_add = {}
+        props_to_delete = []
+
+        if allowlist is not None:
+            for name, prop_spec in props_yaml.items():
+                if prop_spec["type"] == "node":
+                    continue
+
+                # first check for exact matches
+                if name in allowlist:
+                    continue
+
+                props_to_delete.append(name)
+
+                # now check for regular expression matches
+                for allow_key in allowlist or []:
+                    if re.match(name, allow_key) and allow_key not in props_yaml:
+                        # replace the matching regular expression by an exact match
+                        props_to_add[allow_key] = prop_spec
+
+        elif blocklist is not None:
+            for name, prop_spec in props_yaml.items():
+                if prop_spec["type"] == "node":
+                    continue
+
+                if name in blocklist:
+                    props_to_delete.append(name)
+                    continue
+
+                # now check for regular expression matches
+                restricted_name = name
+                for block_key in blocklist or []:
+                    if re.match(name, block_key):
+                        # replace the matching regular expression by a restricted
+                        # one that matches to all but the blocked key
+                        props_to_delete.append(name)
+                        restricted_name = f"(?!^{block_key}$){restricted_name}"
+
+                if restricted_name not in props_yaml:
+                    props_to_add[restricted_name] = prop_spec
+
+        for prop_name in props_to_delete:
+            del props_yaml[prop_name]
+        props_yaml.update(props_to_add)
+
+        if not child_binding_filter:
+            return
+
+        # filter child bindings
+        for prop_yaml in props_yaml.values():
+            is_child_binding = prop_yaml.get("type") == "node"
+            if not is_child_binding:
                 continue
-            raise
 
-    return ret
+            _STBinding._filter_properties(
+                path,
+                prop_yaml.get("properties"),
+                child_binding_filter.get("property-allowlist"),
+                child_binding_filter.get("property-blocklist"),
+                child_binding_filter.get("child-binding"),
+            )
+
+    @classmethod
+    def _check_prop_filter(
+        cls, filter_name: str, filter_list: Optional[list[str]], path: Optional[str]
+    ) -> None:
+        # Ensure an include: ... property-allowlist or property-blocklist
+        # is a list.
+
+        if not filter_list:
+            return
+
+        if not isinstance(filter_list, list):
+            _err(f"'{filter_name}' value {filter_list} in {path} should be a list")
+
+    @classmethod
+    def _merge_yaml(
+        cls,
+        path: str,
+        to_yaml: OrderedDict[str, Any],
+        from_yaml: OrderedDict[str, Any],
+        check_required: bool = False,
+        parent_key: Optional[str] = None,
+    ):
+        # Recursively merges 'from_yaml' into 'to_yaml', to implement
+        # 'include:'.
+        #
+        # If 'from_yaml' and 'to_yaml' contain a 'required:' key for the same
+        # property, then the values are ORed together.
+        #
+        # If 'check_required' is True, then an error is raised if 'from_yaml'
+        # has 'required: true' while 'to_yaml' has 'required: false'. This
+        # prevents bindings from "downgrading" requirements from bindings they
+        # include, which might help keep bindings well-organized.
+        #
+        # It's an error for most other keys to appear in both 'from_yaml' and
+        # 'to_yaml'. When it's not an error, the value in 'to_yaml' takes
+        # precedence.
+        #
+        # 'parent_key' is the name of the parent key containing 'to_yaml' and
+        # 'from_yaml', and 'path' is the path to the top-level binding. These
+        # are used to generate errors for sketchy property overwrites.
+
+        for prop_name in from_yaml:
+            if isinstance(to_yaml.get(prop_name), dict) and isinstance(
+                from_yaml[prop_name], dict
+            ):
+                _STBinding._merge_yaml(
+                    path,
+                    to_yaml[prop_name],
+                    from_yaml[prop_name],
+                    check_required,
+                    prop_name,
+                )
+            elif prop_name not in to_yaml:
+                to_yaml[prop_name] = from_yaml[prop_name]
+            elif _STBinding._bad_overwrite(
+                prop_name, to_yaml[prop_name], from_yaml[prop_name], check_required
+            ):
+                _err(
+                    f"{path} (in '{parent_key}'): '{prop_name}' "
+                    f"from included file overwritten ('{from_yaml[prop_name]}' "
+                    f"replaced with '{to_yaml[prop_name]}')"
+                )
+            elif prop_name == "required":
+                # Need a separate check here, because this code runs before
+                # Binding._check()
+                if not (
+                    isinstance(from_yaml["required"], bool)
+                    and isinstance(to_yaml["required"], bool)
+                ):
+                    _err(
+                        f"malformed 'required:' setting for '{parent_key}' in "
+                        f"'properties' in {path}, expected true/false"
+                    )
+
+                # If more than one included file has a 'required:' for a
+                # particular property, OR the values together, so that
+                # 'required: true' wins.
+                to_yaml["required"] = to_yaml["required"] or from_yaml["required"]
+
+    @classmethod
+    def _bad_overwrite(
+        cls, prop: str, to_prop: Any, from_prop: Any, check_required: bool
+    ) -> bool:
+        # _STBinding._merge_props() helper. Returns True in cases where it's bad
+        # that to_prop takes precedence over from_prop
+
+        if to_prop == from_prop:
+            return False
+
+        # These are overridden deliberately
+        if prop in cls._overridable_props():
+            return False
+
+        if prop == "required":
+            if not check_required:
+                return False
+            return from_prop and not to_prop
+
+        return True
+
+    @classmethod
+    def _overridable_props(cls) -> set[str]:
+        return {"title", "description", "schema"}
+
+    def _instantiate_prop_specs(
+        self, props_yaml_source: Optional[OrderedDict[str, Any]], path: str
+    ) -> OrderedDict[str, tuple[re.Pattern, S]]:
+        props = [] if props_yaml_source is None else props_yaml_source.items()
+        return OrderedDict(
+            [
+                (
+                    prop_name,
+                    (
+                        re.compile(prop_name),
+                        self._instantiate_prop_spec(prop_name, prop_yaml_source, path),
+                    ),
+                )
+                for prop_name, prop_yaml_source in props
+                if prop_yaml_source.get("type") != "node"
+            ]
+        )
+
+    def _instantiate_child_bindings(
+        self,
+        props_yaml_source: Optional[OrderedDict[str, Any]],
+        allowlist: Optional[list[str]],
+        blocklist: Optional[list[str]],
+        path: str,
+    ) -> OrderedDict[str, tuple[re.Pattern, B]]:
+        child_bindings = {} if props_yaml_source is None else props_yaml_source.items()
+        return OrderedDict(
+            [
+                (
+                    prop_name,
+                    (
+                        re.compile(prop_name),
+                        self._instantiate(
+                            path=path,
+                            yaml_source=prop_yaml_source,
+                            require_schema=False,
+                            require_description=False,
+                            allowlist=allowlist,
+                            blocklist=blocklist,
+                            fname2path=self._fname2path,
+                            is_child_binding=True,
+                        ),
+                    ),
+                )
+                for prop_name, prop_yaml_source in child_bindings
+                if prop_yaml_source.get("type") == "node"
+            ]
+        )
+
+    def _instantiate_prop_spec(
+        self, prop_name: str, prop_yaml_source: OrderedDict[str, Any], path: str
+    ) -> S:
+        raise NotImplementedError
+
+    def _check(
+        self,
+        require_schema: bool,
+        require_description: bool,
+        top_level_props: set[str],
+        legacy_errors: dict[str, str],
+    ):
+        # Does sanity checking on the binding.
+
+        if self.schema is not None:
+            if not isinstance(self.schema, str):
+                _err(
+                    f"malformed '{self.schema_prop_name}: {self.schema}' "
+                    f"field in {self.path} - "
+                    f"should be a string, not {type(self.schema).__name__}"
+                )
+        elif require_schema:
+            _err(f"missing 'schema' property in {self.path}")
+
+        yaml_source = self.yaml_source
+
+        if "description" in yaml_source:
+            description = yaml_source["description"]
+            if not isinstance(description, str) or not description:
+                _err(f"malformed or empty 'description' in {self.path}")
+        elif require_description:
+            _err(f"missing 'description' in {self.path}")
+
+        for key in yaml_source:
+            if key in legacy_errors:
+                _err(f"legacy '{key}:' in {self.path}, {legacy_errors[key]}")
+
+        ok_prop_keys = {
+            "description",
+            "type",
+            "required",
+            "enum",
+            "const",
+            "default",
+            "deprecated",
+        }
+
+        # Property types that are defined for the source format.
+        # key: the string given in the "type" attribute of a property definition
+        # value: A tuple containing...
+        #   1. the expected python representation parsed from the YAML file. A
+        #      type in list format represents an array of that type.
+        #   2. a boolean defining whether this property may have a default
+        #      value specified or not.
+        ok_prop_types: dict[str, tuple[type | list[type], bool]] = {
+            "boolean": (bool, True),
+            "int": (int, True),
+            "array": ([int], True),
+            "uint8-array": (bytes, True),
+            "string": (str, True),
+            "string-array": ([str], True),
+        }
+
+        self._check_properties(top_level_props, ok_prop_keys, ok_prop_types)
+
+    def _check_properties(
+        self,
+        top_level_props: set[str],
+        ok_prop_keys: set[str],
+        ok_prop_types: dict[str, tuple[type | list[type], bool]],
+    ) -> None:
+        # _check() helper for checking the contents of 'properties:'.
+
+        props_yaml_source = self.yaml_source.get("properties") or {}
+        if TYPE_CHECKING:
+            assert isinstance(props_yaml_source, dict)
+
+        for prop_name, prop_spec_source in props_yaml_source.items():
+            for key in prop_spec_source:
+                if prop_name in self.prop2bindings and key in top_level_props:
+                    # Child bindings can have additional 'properties:' key.
+                    continue
+
+                if key not in ok_prop_keys:
+                    _err(
+                        f"unknown setting '{key}' in "
+                        f"'properties: {prop_name}: ...' in {self.path}, "
+                        f"expected one of {', '.join(ok_prop_keys)}"
+                    )
+
+            self._check_prop_by_type(
+                prop_name, prop_spec_source, self.path, ok_prop_types
+            )
+
+            for true_false_opt in ["required", "deprecated"]:
+                if true_false_opt in prop_spec_source:
+                    option = prop_spec_source[true_false_opt]
+                    if not isinstance(option, bool):
+                        _err(
+                            f"malformed '{true_false_opt}:' setting '{option}' "
+                            f"for '{prop_name}' in 'properties' in {self.path}, "
+                            "expected true/false"
+                        )
+
+            if prop_spec_source.get("deprecated") and prop_spec_source.get("required"):
+                _err(
+                    f"'{prop_name}' in 'properties' in {self.path} should not "
+                    "have both 'deprecated' and 'required' set"
+                )
+
+            if "description" in prop_spec_source and not isinstance(
+                prop_spec_source["description"], str
+            ):
+                _err(
+                    "missing, malformed, or empty 'description' for "
+                    f"'{prop_name}' in 'properties' in {self.path}"
+                )
+
+            if "enum" in prop_spec_source and not isinstance(
+                prop_spec_source["enum"], list
+            ):
+                _err(f"enum in {self.path} for property '{prop_name}' is not a list")
+
+    def _check_prop_by_type(
+        self,
+        prop_name: str,
+        prop_spec_source: dict,
+        binding_path: Optional[str],
+        ok_prop_types: dict[str, tuple[type | list[type], bool]],
+    ) -> None:
+        # Binding._check_properties() helper. Checks 'type:', 'default:' and
+        # 'const:' for the property named 'prop_name'
+
+        prop_type = prop_spec_source.get("type")
+        default = prop_spec_source.get("default")
+        const = prop_spec_source.get("const")
+
+        if prop_type is None:
+            _err(
+                f"missing 'type:' for '{prop_name}' in 'properties' in "
+                f"{binding_path}"
+            )
+
+        if prop_type == "node":
+            # Child nodes will be checked by child bindings.
+            return
+
+        if prop_type not in ok_prop_types:
+            _err(
+                f"'{prop_name}' in 'properties:' in {binding_path} "
+                f"has unknown type '{prop_type}', expected one of "
+                + ", ".join(ok_prop_types)
+            )
+
+        self._check_prop_by_source_specific_type(
+            prop_name,
+            prop_type,
+            prop_spec_source,
+            binding_path,
+        )
+
+        # If you change const_types, be sure to update the type annotation
+        # for STPropertySpec.const.
+        const_types = {"int", "array", "uint8-array", "string", "string-array"}
+        if const and prop_type not in const_types:
+            _err(
+                f"const in {binding_path} for property '{prop_name}' "
+                f"has type '{prop_type}', expected one of " + ", ".join(const_types)
+            )
+
+        # Check default
+
+        if default is None:
+            return
+
+        expect_python_types, can_be_default = ok_prop_types[prop_type]
+        if isinstance(
+            expect_python_types, list
+        ):  # this is also a type guard - don't simplify
+            expect_array = True
+            expect_python_type = expect_python_types[0]
+        else:
+            expect_array = False
+            expect_python_type = expect_python_types
+
+        if not can_be_default:
+            _err(
+                "'default:' can't be combined with "
+                f"'type: {prop_type}' for '{prop_name}' in "
+                f"'properties:' in {binding_path}"
+            )
+
+        def ok_default() -> bool:
+            # Returns True if 'default' is an okay default for the property's type.
+            # If you change this, be sure to update the type annotation for
+            # PropertySpec.default.
+
+            if expect_python_type is bytes:
+
+                def validate_bytes(val) -> bool:
+                    if isinstance(val, list):
+                        return all(isinstance(v, int) for v in val)
+                    elif isinstance(val, str):
+                        try:
+                            bytes.fromhex(val)
+                            return True
+                        except ValueError:
+                            return False
+                    return False
+
+                if expect_array:
+                    return isinstance(default, list) and all(
+                        validate_bytes(val) for val in default
+                    )
+                else:
+                    return validate_bytes(default)
+
+            if expect_array:
+                return isinstance(default, list) and all(
+                    isinstance(val, expect_python_type) for val in default
+                )
+            else:
+                return isinstance(default, expect_python_type)
+
+        if not ok_default():
+            _err(
+                f"'default: {default}' is invalid for '{prop_name}' "
+                f"in 'properties:' in {binding_path}, "
+                f"which has type {prop_type}"
+            )
+
+    def _check_prop_by_source_specific_type(
+        self,
+        prop_name: str,
+        prop_type: str,
+        options: dict,
+        binding_path: Optional[str],
+    ) -> None:
+        # May be overridden by subclasses.
+        pass
 
 
 #
 # Private global functions
 #
 
-def _check_prop_by_type(
-    prop_name: str, options: dict, binding_path: Optional[str]
-) -> None:
-    # Binding._check_properties() helper. Checks 'type:', 'default:',
-    # 'const:' and # 'specifier-space:' for the property named 'prop_name'
-
-    prop_type = options.get("type")
-    default = options.get("default")
-    const = options.get("const")
-
-    if prop_type is None:
-        _err(f"missing 'type:' for '{prop_name}' in 'properties' in " f"{binding_path}")
-
-    ok_types = {
-        "boolean",
-        "int",
-        "array",
-        "uint8-array",
-        "string",
-        "string-array",
-        "phandle",
-        "phandles",
-        "phandle-array",
-        "path",
-        "compound",
-    }
-
-    if prop_type not in ok_types:
-        _err(
-            f"'{prop_name}' in 'properties:' in {binding_path} "
-            f"has unknown type '{prop_type}', expected one of " + ", ".join(ok_types)
-        )
-
-    if "specifier-space" in options and prop_type != "phandle-array":
-        _err(
-            f"'specifier-space' in 'properties: {prop_name}' "
-            f"has type '{prop_type}', expected 'phandle-array'"
-        )
-
-    if prop_type == "phandle-array":
-        if not prop_name.endswith("s") and not "specifier-space" in options:
-            _err(
-                f"'{prop_name}' in 'properties:' in {binding_path} "
-                f"has type 'phandle-array' and its name does not end in 's', "
-                f"but no 'specifier-space' was provided."
-            )
-
-    # If you change const_types, be sure to update the type annotation
-    # for PropertySpec.const.
-    const_types = {"int", "array", "uint8-array", "string", "string-array"}
-    if const and prop_type not in const_types:
-        _err(
-            f"const in {binding_path} for property '{prop_name}' "
-            f"has type '{prop_type}', expected one of " + ", ".join(const_types)
-        )
-
-    # Check default
-
-    if default is None:
-        return
-
-    if prop_type in {
-        "boolean",
-        "compound",
-        "phandle",
-        "phandles",
-        "phandle-array",
-        "path",
-    }:
-        _err(
-            "'default:' can't be combined with "
-            f"'type: {prop_type}' for '{prop_name}' in "
-            f"'properties:' in {binding_path}"
-        )
-
-    def ok_default() -> bool:
-        # Returns True if 'default' is an okay default for the property's type.
-        # If you change this, be sure to update the type annotation for
-        # PropertySpec.default.
-
-        if (
-            prop_type == "int"
-            and isinstance(default, int)
-            or prop_type == "string"
-            and isinstance(default, str)
-        ):
-            return True
-
-        # array, uint8-array, or string-array
-
-        if not isinstance(default, list):
-            return False
-
-        if prop_type == "array" and all(isinstance(val, int) for val in default):
-            return True
-
-        if prop_type == "uint8-array" and all(
-            isinstance(val, int) and 0 <= val <= 255 for val in default
-        ):
-            return True
-
-        # string-array
-        return all(isinstance(val, str) for val in default)
-
-    if not ok_default():
-        _err(
-            f"'default: {default}' is invalid for '{prop_name}' "
-            f"in 'properties:' in {binding_path}, "
-            f"which has type {prop_type}"
-        )
-
-
-def _check_include_dict(
-    name: Optional[str],
-    allowlist: Optional[List[str]],
-    blocklist: Optional[List[str]],
-    child_filter: Optional[dict],
-    binding_path: Optional[str],
-) -> None:
-    # Check that an 'include:' named 'name' with property-allowlist
-    # 'allowlist', property-blocklist 'blocklist', and
-    # child-binding filter 'child_filter' has valid structure.
-
-    if name is None:
-        _err(f"'include:' element in {binding_path} " "should have a 'name' key")
-
-    if allowlist is not None and blocklist is not None:
-        _err(
-            f"'include:' of file '{name}' in {binding_path} "
-            "should not specify both 'property-allowlist:' "
-            "and 'property-blocklist:'"
-        )
-
-    while child_filter is not None:
-        child_copy = deepcopy(child_filter)
-        child_allowlist: Optional[List[str]] = child_copy.pop(
-            "property-allowlist", None
-        )
-        child_blocklist: Optional[List[str]] = child_copy.pop(
-            "property-blocklist", None
-        )
-        next_child_filter: Optional[dict] = child_copy.pop("child-binding", None)
-
-        if child_copy:
-            # We've popped out all the valid keys.
-            _err(
-                f"'include:' of file '{name}' in {binding_path} "
-                "should not have these unexpected contents in a "
-                f"'child-binding': {child_copy}"
-            )
-
-        if child_allowlist is not None and child_blocklist is not None:
-            _err(
-                f"'include:' of file '{name}' in {binding_path} "
-                "should not specify both 'property-allowlist:' and "
-                "'property-blocklist:' in a 'child-binding:'"
-            )
-
-        child_filter = next_child_filter
-
-
-def _filter_properties(
-    raw: dict,
-    allowlist: Optional[List[str]],
-    blocklist: Optional[List[str]],
-    child_filter: Optional[dict],
-    binding_path: Optional[str],
-) -> None:
-    # Destructively modifies 'raw["properties"]' and
-    # 'raw["child-binding"]', if they exist, according to
-    # 'allowlist', 'blocklist', and 'child_filter'.
-
-    props = raw.get("properties")
-    _filter_properties_helper(props, allowlist, blocklist, binding_path)
-
-    child_binding = raw.get("child-binding")
-    while child_filter is not None and child_binding is not None:
-        _filter_properties_helper(
-            child_binding.get("properties"),
-            child_filter.get("property-allowlist"),
-            child_filter.get("property-blocklist"),
-            binding_path,
-        )
-        child_filter = child_filter.get("child-binding")
-        child_binding = child_binding.get("child-binding")
-
-
-def _filter_properties_helper(
-    props: Optional[dict],
-    allowlist: Optional[List[str]],
-    blocklist: Optional[List[str]],
-    binding_path: Optional[str],
-) -> None:
-    if props is None or (allowlist is None and blocklist is None):
-        return
-
-    _check_prop_filter("property-allowlist", allowlist, binding_path)
-    _check_prop_filter("property-blocklist", blocklist, binding_path)
-
-    if allowlist is not None:
-        allowset = set(allowlist)
-        to_del = [prop for prop in props if prop not in allowset]
-    else:
-        if TYPE_CHECKING:
-            assert blocklist
-        blockset = set(blocklist)
-        to_del = [prop for prop in props if prop in blockset]
-
-    for prop in to_del:
-        del props[prop]
-
-
-def _check_prop_filter(
-    name: str, value: Optional[List[str]], binding_path: Optional[str]
-) -> None:
-    # Ensure an include: ... property-allowlist or property-blocklist
-    # is a list.
-
-    if value is None:
-        return
-
-    if not isinstance(value, list):
-        _err(f"'{name}' value {value} in {binding_path} should be a list")
-
-
-def _merge_props(
-    to_dict: dict,
-    from_dict: dict,
-    parent: Optional[str],
-    binding_path: Optional[str],
-    check_required: bool = False,
-):
-    # Recursively merges 'from_dict' into 'to_dict', to implement 'include:'.
-    #
-    # If 'from_dict' and 'to_dict' contain a 'required:' key for the same
-    # property, then the values are ORed together.
-    #
-    # If 'check_required' is True, then an error is raised if 'from_dict' has
-    # 'required: true' while 'to_dict' has 'required: false'. This prevents
-    # bindings from "downgrading" requirements from bindings they include,
-    # which might help keep bindings well-organized.
-    #
-    # It's an error for most other keys to appear in both 'from_dict' and
-    # 'to_dict'. When it's not an error, the value in 'to_dict' takes
-    # precedence.
-    #
-    # 'parent' is the name of the parent key containing 'to_dict' and
-    # 'from_dict', and 'binding_path' is the path to the top-level binding.
-    # These are used to generate errors for sketchy property overwrites.
-
-    for prop in from_dict:
-        if isinstance(to_dict.get(prop), dict) and isinstance(from_dict[prop], dict):
-            _merge_props(
-                to_dict[prop], from_dict[prop], prop, binding_path, check_required
-            )
-        elif prop not in to_dict:
-            to_dict[prop] = from_dict[prop]
-        elif _bad_overwrite(to_dict, from_dict, prop, check_required):
-            _err(
-                f"{binding_path} (in '{parent}'): '{prop}' "
-                f"from included file overwritten ('{from_dict[prop]}' "
-                f"replaced with '{to_dict[prop]}')"
-            )
-        elif prop == "required":
-            # Need a separate check here, because this code runs before
-            # Binding._check()
-            if not (
-                isinstance(from_dict["required"], bool)
-                and isinstance(to_dict["required"], bool)
-            ):
-                _err(
-                    f"malformed 'required:' setting for '{parent}' in "
-                    f"'properties' in {binding_path}, expected true/false"
-                )
-
-            # 'required: true' takes precedence
-            to_dict["required"] = to_dict["required"] or from_dict["required"]
-
-
-def _bad_overwrite(
-    to_dict: dict, from_dict: dict, prop: str, check_required: bool
-) -> bool:
-    # _merge_props() helper. Returns True in cases where it's bad that
-    # to_dict[prop] takes precedence over from_dict[prop].
-
-    if to_dict[prop] == from_dict[prop]:
-        return False
-
-    # These are overridden deliberately
-    if prop in {"title", "description", "compatible"}:
-        return False
-
-    if prop == "required":
-        if not check_required:
-            return False
-        return from_dict[prop] and not to_dict[prop]
-
-    return True
-
-
-def _binding_inc_error(msg):
-    # Helper for reporting errors in the !include implementation
-
-    raise yaml.constructor.ConstructorError(None, None, "error: " + msg)
-
-
-def _binding_include(loader, node):
-    # Implements !include, for backwards compatibility. '!include [foo, bar]'
-    # just becomes [foo, bar].
-
-    if isinstance(node, yaml.ScalarNode):
-        # !include foo.yaml
-        return [loader.construct_scalar(node)]
-
-    if isinstance(node, yaml.SequenceNode):
-        # !include [foo.yaml, bar.yaml]
-        return loader.construct_sequence(node)
-
-    _binding_inc_error("unrecognised node type in !include statement")
-
-
-# Regular expression for non-alphanumeric-or-underscore characters.
-_NOT_ALPHANUM_OR_UNDERSCORE = re.compile(r"\W", re.ASCII)
-
-
-def str_as_token(val: str) -> str:
-    """Return a canonical representation of a string as a C token.
-
-    This converts special characters in 'val' to underscores, and
-    returns the result."""
-
-    return re.sub(_NOT_ALPHANUM_OR_UNDERSCORE, "_", val)
-
 
 def _err(msg) -> NoReturn:
-    raise BindingError(msg)
-
-
-# Custom PyYAML binding loader class to avoid modifying yaml.Loader directly,
-# which could interfere with YAML loading in clients
-class _BindingLoader(Loader):
-    pass
-
-
-# Add legacy '!include foo.yaml' handling
-_BindingLoader.add_constructor("!include", _binding_include)
+    raise STBindingError(msg)

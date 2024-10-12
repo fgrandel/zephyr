@@ -24,6 +24,7 @@ import pathlib
 
 from colorama import Fore
 from domains import Domains
+from settings import STree
 from twisterlib.cmakecache import CMakeCache
 from twisterlib.environment import canonical_zephyr_base
 from twisterlib.error import BuildError, ConfigurationError, StatusAttributeError
@@ -348,7 +349,7 @@ class CMake:
 
         if not self.options.disable_warnings_as_errors:
             warnings_as_errors = 'y'
-            gen_edt_args = "--edtlib-Werror"
+            gen_edt_args = "--stree-Werror"
         else:
             warnings_as_errors = 'n'
             gen_edt_args = ""
@@ -475,16 +476,15 @@ class FilterBuilder(CMake):
             domain_build = domains.get_default_domain().build_dir
             cmake_cache_path = os.path.join(domain_build, "CMakeCache.txt")
             defconfig_path = os.path.join(domain_build, "zephyr", ".config")
-            edt_pickle = os.path.join(domain_build, "zephyr", "edt.pickle")
+            stree_pickle = os.path.join(domain_build, "zephyr", "stree.pickle")
         else:
             cmake_cache_path = os.path.join(self.build_dir, "CMakeCache.txt")
             # .config is only available after kconfig stage in cmake. If only dt based filtration is required
             # package helper call won't produce .config
             if not filter_stages or "kconfig" in filter_stages:
                 defconfig_path = os.path.join(self.build_dir, "zephyr", ".config")
-            # dt is compiled before kconfig, so edt_pickle is available regardless of choice of filter stages
-            edt_pickle = os.path.join(self.build_dir, "zephyr", "edt.pickle")
-
+            # dt is compiled before kconfig, so stree.pickle is available regardless of choice of filter stages
+            stree_pickle = os.path.join(self.build_dir, "zephyr", "stree.pickle")
 
         if not filter_stages or "kconfig" in filter_stages:
             with open(defconfig_path, "r") as fp:
@@ -530,12 +530,13 @@ class FilterBuilder(CMake):
 
         if self.testsuite and self.testsuite.filter:
             try:
-                if os.path.exists(edt_pickle):
-                    with open(edt_pickle, 'rb') as f:
-                        edt = pickle.load(f)
+                if os.path.exists(stree_pickle):
+                    with open(stree_pickle, "rb") as f:
+                        stree: STree = pickle.load(f)
+                    edtree = stree.edtree
                 else:
-                    edt = None
-                ret = expr_parser.parse(self.testsuite.filter, filter_data, edt)
+                    edtree = None
+                ret = expr_parser.parse(self.testsuite.filter, filter_data, edtree)
 
             except (ValueError, SyntaxError) as se:
                 sys.stderr.write(

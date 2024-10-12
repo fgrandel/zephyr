@@ -2,7 +2,7 @@
 
 description: Parent binding
 
-compatible: "binding-include-test"
+schema: "binding-include-test"
 
 include: child.yaml
 

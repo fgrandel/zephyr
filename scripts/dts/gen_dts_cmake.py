@@ -3,9 +3,9 @@
 # Copyright (c) 2021 Nordic Semiconductor ASA
 # SPDX-License-Identifier: Apache-2.0
 
-'''
-This script uses edtlib and the devicetree data in the build directory
-to generate a CMake file which contains devicetree data.
+"""
+This script uses the settings library and the devicetree data in the build
+directory to generate a CMake file which contains devicetree data.
 
 That data can then be used in the rest of the build system.
 
@@ -37,13 +37,15 @@ like this:
 This is analogous to how DTS values are encoded as C macros,
 which can be read in source code using C APIs like
 DT_PROP(node_id, foo) from devicetree.h.
-'''
+"""
 
 import argparse
 import os
 import pickle
 import sys
 from collections import defaultdict
+
+from settings import STree
 
 sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-settings", "src")
@@ -72,8 +74,9 @@ def parse_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--cmake-out", required=True,
                         help="path to write the CMake property file")
-    parser.add_argument("--edt-pickle", required=True,
-                        help="path to read the pickled edtlib.EDT object from")
+    parser.add_argument("--stree-pickle", required=True,
+                        help="path to read the pickled settings library object from",
+    )
 
     return parser.parse_args()
 
@@ -81,8 +84,10 @@ def parse_args():
 def main():
     args = parse_args()
 
-    with open(args.edt_pickle, 'rb') as f:
-        edt = pickle.load(f)
+    with open(args.stree_pickle, "rb") as f:
+        stree: STree = pickle.load(f)
+
+    edtree = stree.edtree
 
     # In what looks like an undocumented implementation detail, CMake
     # target properties are stored in a C++ standard library map whose
@@ -101,27 +106,27 @@ def main():
     # macros.bnf for C macros.
 
     cmake_props = []
-    chosen_nodes = edt.chosen_nodes
+    chosen_nodes = edtree.chosen_nodes
     for node in chosen_nodes:
         path = chosen_nodes[node].path
         cmake_props.append(f'"DT_CHOSEN|{node}" "{path}"')
 
-    # The separate loop over edt.nodes here is meant to keep
+    # The separate loop over edtree.nodes here is meant to keep
     # all of the alias-related properties in one place.
-    for node in edt.nodes:
+    for node in edtree.nodes:
         path = node.path
         for alias in node.aliases:
             cmake_props.append(f'"DT_ALIAS|{alias}" "{path}"')
 
     compatible2paths = defaultdict(list)
-    for node in edt.nodes:
+    for node in edtree.nodes:
         cmake_props.append(f'"DT_NODE|{node.path}" TRUE')
 
         for label in node.labels:
             cmake_props.append(f'"DT_NODELABEL|{label}" "{node.path}"')
 
         for item in node.props:
-            # We currently do not support phandles for edt -> cmake conversion.
+            # We currently do not support phandles for edtree -> cmake conversion.
             if "phandle" not in node.props[item].type:
                 if "array" in node.props[item].type:
                     # Convert array to CMake list

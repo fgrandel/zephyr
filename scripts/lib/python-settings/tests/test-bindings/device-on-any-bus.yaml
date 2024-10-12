@@ -2,4 +2,4 @@
 
 description: Device on any bus
 
-compatible: "on-any-bus"
+schema: "on-any-bus"

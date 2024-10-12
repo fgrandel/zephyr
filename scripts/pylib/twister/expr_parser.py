@@ -11,6 +11,8 @@ import re
 import sys
 import threading
 
+from settings import EDTree
+
 try:
     import ply.lex as lex
     import ply.yacc as yacc
@@ -199,13 +201,14 @@ def ast_sym_int(ast, env):
             return int(v, 10)
     return 0
 
-def ast_expr(ast, env, edt):
+
+def ast_expr(ast, env, edtree: EDTree):
     if ast[0] == "not":
-        return not ast_expr(ast[1], env, edt)
+        return not ast_expr(ast[1], env, edtree)
     elif ast[0] == "or":
-        return ast_expr(ast[1], env, edt) or ast_expr(ast[2], env, edt)
+        return ast_expr(ast[1], env, edtree) or ast_expr(ast[2], env, edtree)
     elif ast[0] == "and":
-        return ast_expr(ast[1], env, edt) and ast_expr(ast[2], env, edt)
+        return ast_expr(ast[1], env, edtree) and ast_expr(ast[2], env, edtree)
     elif ast[0] == "==":
         return ast_sym(ast[1], env) == ast[2]
     elif ast[0] == "!=":
@@ -226,13 +229,15 @@ def ast_expr(ast, env, edt):
         return bool(re.match(ast[2], ast_sym(ast[1], env)))
     elif ast[0] == "dt_compat_enabled":
         compat = ast[1][0]
-        for node in edt.nodes:
-            if (node.matching_compat == compat or compat in node.compats) and node.status == "okay":
+        for node in edtree.nodes:
+            if (
+                compat in node.matching_schemas == compat or compat in node.schemas
+            ) and node.status == "okay":
                 return True
         return False
     elif ast[0] == "dt_alias_exists":
         alias = ast[1][0]
-        for node in edt.nodes:
+        for node in edtree.nodes:
             if alias in node.aliases and node.status == "okay":
                 return True
         return False
@@ -243,40 +248,53 @@ def ast_expr(ast, env, edt):
 
         alias = ast[1][0]
         compat = ast[1][1]
-        for node in edt.nodes:
+        for node in edtree.nodes:
             parent = node.parent
             if parent is None:
                 continue
-            if node.status == "okay" and alias in node.aliases and \
-                    (parent.matching_compat == compat or compat in parent.compats):
+            if (
+                node.status == "okay"
+                and alias in node.aliases
+                and (
+                    compat in parent.matching_schemas == compat
+                    or compat in parent.schemas
+                )
+            ):
                 return True
         return False
     elif ast[0] == "dt_label_with_parent_compat_enabled":
         compat = ast[1][1]
         label = ast[1][0]
-        node = edt.label2node.get(label)
+        node = edtree.label2node.get(label)
         if node is not None:
             parent = node.parent
         else:
             return False
-        return parent is not None and parent.status == 'okay' and \
-            (parent.matching_compat == compat or compat in parent.compats)
+        return (
+            parent is not None
+            and parent.status == "okay"
+            and (
+                compat in parent.matching_schemas == compat or compat in parent.schemas
+            )
+        )
     elif ast[0] == "dt_chosen_enabled":
         chosen = ast[1][0]
-        node = edt.chosen_node(chosen)
+        node = edtree.chosen_node(chosen)
         if node and node.status == "okay":
             return True
         return False
     elif ast[0] == "dt_nodelabel_enabled":
         label = ast[1][0]
-        node = edt.label2node.get(label)
+        node = edtree.label2node.get(label)
         if node and node.status == "okay":
             return True
         return False
 
+
 mutex = threading.Lock()
 
-def parse(expr_text, env, edt):
+
+def parse(expr_text, env, edtree: EDTree):
     """Given a text representation of an expression in our language,
     use the provided environment to determine whether the expression
     is true or false"""
@@ -288,7 +306,8 @@ def parse(expr_text, env, edt):
     finally:
         mutex.release()
 
-    return ast_expr(ast, env, edt)
+    return ast_expr(ast, env, edtree)
+
 
 # Just some test code
 if __name__ == "__main__":

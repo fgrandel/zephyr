@@ -8,4 +8,4 @@ include:
       child-binding:
         property-allowlist: [grandchild-prop-1]
 
-compatible: filter-child-bindings
+schema: filter-child-bindings

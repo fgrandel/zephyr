@@ -54,6 +54,7 @@ sys.path.insert(
     os.path.join(os.environ["ZEPHYR_BASE"], "scripts", "lib", "python-settings", "src"),
 )
 
+from settings import STree
 
 class Signal(enum.Enum):
     USART0_TX = 0
@@ -117,7 +118,7 @@ class Pinmux:
 def parse_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument(
-        "edt_pickle", help="path to read the pickled edtlib.EDT object from"
+        "stree_pickle", help="path to read the pickled settings library object from"
     )
     parser.add_argument("out", help="path to write the header file")
 
@@ -246,11 +247,12 @@ class Portbank:
 def main():
     args = parse_args()
 
-    with open(args.edt_pickle, "rb") as f:
-        edt = pickle.load(f)
+    with open(args.stree_pickle, "rb") as f:
+        stree: STree = pickle.load(f)
+    edtree = stree.edtree
 
     pinmux_table = []
-    for node in edt.nodes:
+    for node in edtree.nodes:
         if node.status != "okay":
             continue
         if not node.pinctrls:

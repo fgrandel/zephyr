@@ -26,6 +26,8 @@ from elftools.elf.sections import SymbolTableSection
 from elftools.dwarf.die import DIE
 from elftools.common.exceptions import DWARFError
 
+from settings import EDTree
+
 if version.parse(elftools.__version__) < version.parse('0.24'):
     sys.exit("pyelftools is out of date, need version 0.24 or later")
 
@@ -155,10 +157,12 @@ class ZephyrElf:
     """
     Represents information about devices in an elf file.
     """
-    def __init__(self, kernel, edt, device_start_symbol: Optional[str] = None):
+    def __init__(
+        self, kernel, edtree: EDTree, device_start_symbol: Optional[str] = None
+    ):
         self.elf = ELFFile(open(kernel, "rb"))
         self.relocatable = self.elf['e_type'] == 'ET_REL'
-        self.edt = edt
+        self.edtree = edtree
         self.devices = []
         if device_start_symbol is not None:
             self.ld_consts = self._symbols_find_value(
@@ -308,10 +312,10 @@ class ZephyrElf:
         # Compute the dependency graph induced from the full graph restricted to the
         # the nodes that exist in the application.  Note that the edges in the
         # induced graph correspond to paths in the full graph.
-        root = self.edt.dep_ord2node[0]
+        root = self.edtree.dep_ord2node[0]
 
         for ord, dev in devices.items():
-            n = self.edt.dep_ord2node[ord]
+            n = self.edtree.dep_ord2node[ord]
 
             deps = set(n.depends_on)
             while len(deps) > 0:
@@ -374,12 +378,12 @@ class ZephyrElf:
             if dev.obj_ordinals in ordinal_arrays:
                 dev.ordinals = ordinal_arrays[dev.obj_ordinals]
                 if dev.ordinal != DeviceOrdinals.DEVICE_HANDLE_NULL:
-                    dev.edt_node = self.edt.dep_ord2node[dev.ordinal]
+                    dev.edt_node = self.edtree.dep_ord2node[dev.ordinal]
 
         # Create mapping of ordinals to devices
         devices_by_ord = {d.ordinal: d for d in self.devices if d.edt_node}
 
-        # Link devices to each other based on the EDT tree
+        # Link devices to each other based on the EDTree
         self._link_devices(devices_by_ord)
 
         # Link injected devices to each other
@@ -396,7 +400,7 @@ class ZephyrElf:
             if dev.ordinal == DeviceOrdinals.DEVICE_HANDLE_NULL:
                 text = '{:s}\\nHandle: {:d}'.format(dev.sym.name, dev.handle)
             else:
-                n = self.edt.dep_ord2node[dev.ordinal]
+                n = self.edtree.dep_ord2node[dev.ordinal]
                 text = '{:s}\\nOrdinal: {:d} | Handle: {:d}\\n{:s}'.format(
                     n.name, dev.ordinal, dev.handle, n.path
                 )

@@ -9,7 +9,7 @@ set(board_vif_xml ${BOARD}_${vif_xml})
 set(vif_out ${PROJECT_BINARY_DIR}/${vif_xml})
 
 set(cmd_gen_vif ${PYTHON_EXECUTABLE} ${gen_vif_script}
-        --edt-pickle ${EDT_PICKLE}
+        --stree-pickle ${STREE_PICKLE}
         --compatible ${dts_compatible}
         --vif-out ${vif_out}
         )
@@ -49,7 +49,7 @@ endif ()
 
 add_custom_command(
         OUTPUT ${vif_xml}
-        DEPENDS ${EDT_PICKLE}
+        DEPENDS ${STREE_PICKLE}
         COMMENT "Generating XML file at zephyr/vif.xml"
         COMMAND ${cmd_gen_vif}
 )

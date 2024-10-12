@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import functools
-import inspect
 import operator
 import os
 import pickle
@@ -17,26 +16,23 @@ sys.path.insert(
     0, os.path.join(ZEPHYR_BASE, "scripts", "lib", "python-settings", "src")
 )
 
+from settings import EDTError, STree
+
 # Types we support
 # 'string', 'int', 'hex', 'bool'
 
 doc_mode = os.environ.get('KCONFIG_DOC_MODE') == "1"
 
 if not doc_mode:
-    EDT_PICKLE = os.environ.get("EDT_PICKLE")
+    STREE_PICKLE = os.environ.get("STREE_PICKLE")
 
     # The "if" handles a missing dts.
-    if EDT_PICKLE is not None and os.path.isfile(EDT_PICKLE):
-        with open(EDT_PICKLE, 'rb') as f:
-            edt = pickle.load(f)
-            edtlib = inspect.getmodule(edt)
+    if STREE_PICKLE is not None and os.path.isfile(STREE_PICKLE):
+        with open(STREE_PICKLE, "rb") as f:
+            stree: STree = pickle.load(f)
+        edtree = stree.edtree
     else:
-        edt = None
-        edtlib = None
-
-
-def _warn(kconf, msg):
-    print("{}:{}: WARNING: {}".format(kconf.filename, kconf.linenr, msg))
+        edtree = None
 
 
 def _dt_units_to_scale(unit):
@@ -63,10 +59,10 @@ def dt_chosen_label(kconf, _, chosen):
     has a "label" property and return the value of that "label". If not, we
     return the node's name in the devicetree.
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return ""
 
-    node = edt.chosen_node(chosen)
+    node = edtree.chosen_node(chosen)
     if not node:
         return ""
 
@@ -81,10 +77,10 @@ def dt_chosen_enabled(kconf, _, chosen):
     This function returns "y" if /chosen contains a property named 'chosen'
     that points to an enabled node, and "n" otherwise
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    node = edt.chosen_node(chosen)
+    node = edtree.chosen_node(chosen)
     return "y" if node and node.status == "okay" else "n"
 
 
@@ -93,10 +89,10 @@ def dt_chosen_path(kconf, _, chosen):
     This function takes a /chosen node property and returns the path
     to the node in the property value, or the empty string.
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    node = edt.chosen_node(chosen)
+    node = edtree.chosen_node(chosen)
 
     return node.path if node else ""
 
@@ -105,15 +101,15 @@ def dt_chosen_has_compat(kconf, _, chosen, compat):
     This function takes a /chosen node property and returns 'y' if the
     chosen node has the provided compatible string 'compat'
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    node = edt.chosen_node(chosen)
+    node = edtree.chosen_node(chosen)
 
     if node is None:
         return "n"
 
-    if compat in node.compats:
+    if compat in node.schemas:
         return "y"
 
     return "n"
@@ -130,12 +126,12 @@ def dt_node_enabled(kconf, name, node):
     'name' is 'dt_alias_enabled, 'node' is an alias.
     """
 
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
     if name == "dt_alias_enabled":
         if node.startswith("/"):
-            # EDT.get_node() works with either aliases or paths. If we
+            # EDTree.node_by_path() works with either aliases or paths. If we
             # are specifically being asked about an alias, reject paths.
             return "n"
     else:
@@ -143,8 +139,8 @@ def dt_node_enabled(kconf, name, node):
         assert name == "dt_path_enabled"
 
     try:
-        node = edt.get_node(node)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(node)
+    except EDTError:
         return "n"
 
     return "y" if node and node.status == "okay" else "n"
@@ -157,10 +153,10 @@ def dt_nodelabel_enabled(kconf, _, label):
 
        foo: some-node { ... };
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    node = edt.label2node.get(label)
+    node = edtree.label2node.get(label)
 
     return "y" if node and node.status == "okay" else "n"
 
@@ -294,10 +290,10 @@ def _dt_chosen_reg_addr(kconf, chosen, index=0, unit=None):
         'mb' or 'Mb'  divide by 8,388,608 (1 << 23)
         'gb' or 'Gb'  divide by 8,589,934,592 (1 << 33)
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return 0
 
-    node = edt.chosen_node(chosen)
+    node = edtree.chosen_node(chosen)
 
     return _node_reg_addr(node, index, unit)
 
@@ -318,10 +314,10 @@ def _dt_chosen_reg_size(kconf, chosen, index=0, unit=None):
         'mb' or 'Mb'  divide by 8,388,608 (1 << 23)
         'gb' or 'Gb'  divide by 8,589,934,592 (1 << 33)
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return 0
 
-    node = edt.chosen_node(chosen)
+    node = edtree.chosen_node(chosen)
 
     return _node_reg_size(node, index, unit)
 
@@ -358,10 +354,10 @@ def _dt_chosen_partition_addr(kconf, chosen, index=0, unit=None):
         'mb' or 'Mb'  divide by 8,388,608 (1 << 23)
         'gb' or 'Gb'  divide by 8,589,934,592 (1 << 33)
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return 0
 
-    node = edt.chosen_node(chosen)
+    node = edtree.chosen_node(chosen)
     if not node:
         return 0
 
@@ -398,12 +394,12 @@ def _dt_node_reg_addr(kconf, path, index=0, unit=None):
         'mb' or 'Mb'  divide by 8,388,608 (1 << 23)
         'gb' or 'Gb'  divide by 8,589,934,592 (1 << 33)
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return 0
 
     try:
-        node = edt.get_node(path)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(path)
+    except EDTError:
         return 0
 
     return _node_reg_addr(node, index, unit)
@@ -424,12 +420,12 @@ def _dt_node_reg_size(kconf, path, index=0, unit=None):
         'mb' or 'Mb'  divide by 8,388,608 (1 << 23)
         'gb' or 'Gb'  divide by 8,589,934,592 (1 << 33)
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return 0
 
     try:
-        node = edt.get_node(path)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(path)
+    except EDTError:
         return 0
 
     return _node_reg_size(node, index, unit)
@@ -456,10 +452,10 @@ def dt_nodelabel_reg(kconf, name, label, index=0, unit=None):
 
        foo: some-node { ... };
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         node = None
     else:
-        node = edt.label2node.get(label)
+        node = edtree.label2node.get(label)
 
     if name == "dt_nodelabel_reg_size_int":
         return str(_dt_node_reg_size(kconf, node.path, index, unit)) if node else "0"
@@ -480,7 +476,7 @@ def _dt_node_bool_prop_generic(node_search_function, search_arg, prop):
     """
     try:
         node = node_search_function(search_arg)
-    except edtlib.EDTError:
+    except EDTError:
         return "n"
 
     if node is None:
@@ -504,10 +500,10 @@ def dt_node_bool_prop(kconf, _, path, prop):
     by the name of 'prop'.  If the 'prop' exists it will return "y" otherwise
     we return "n".
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    return _dt_node_bool_prop_generic(edt.get_node, path, prop)
+    return _dt_node_bool_prop_generic(edtree.node_by_path, path, prop)
 
 def dt_nodelabel_bool_prop(kconf, _, label, prop):
     """
@@ -516,10 +512,10 @@ def dt_nodelabel_bool_prop(kconf, _, label, prop):
     property by the name of 'prop'.  If the 'prop' exists it will return "y"
     otherwise we return "n".
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    return _dt_node_bool_prop_generic(edt.label2node.get, label, prop)
+    return _dt_node_bool_prop_generic(edtree.label2node.get, label, prop)
 
 def dt_chosen_bool_prop(kconf, _, chosen, prop):
     """
@@ -527,10 +523,10 @@ def dt_chosen_bool_prop(kconf, _, chosen, prop):
     looks for the chosen node. If that node exists and has a boolean
     property 'prop', it returns "y". Otherwise, it returns "n".
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    return _dt_node_bool_prop_generic(edt.chosen_node, chosen, prop)
+    return _dt_node_bool_prop_generic(edtree.chosen_node, chosen, prop)
 
 def _dt_node_has_prop_generic(node_search_function, search_arg, prop):
     """
@@ -540,7 +536,7 @@ def _dt_node_has_prop_generic(node_search_function, search_arg, prop):
     """
     try:
         node = node_search_function(search_arg)
-    except edtlib.EDTError:
+    except EDTError:
         return "n"
 
     if node is None:
@@ -558,10 +554,10 @@ def dt_node_has_prop(kconf, _, path, prop):
     by the name of 'prop'.  If the 'prop' exists it will return "y" otherwise
     it returns "n".
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    return _dt_node_has_prop_generic(edt.get_node, path, prop)
+    return _dt_node_has_prop_generic(edtree.node_by_path, path, prop)
 
 def dt_nodelabel_has_prop(kconf, _, label, prop):
     """
@@ -570,10 +566,10 @@ def dt_nodelabel_has_prop(kconf, _, label, prop):
     by the name of 'prop'.  If the 'prop' exists it will return "y" otherwise
     it returns "n".
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    return _dt_node_has_prop_generic(edt.label2node.get, label, prop)
+    return _dt_node_has_prop_generic(edtree.label2node.get, label, prop)
 
 def dt_node_int_prop(kconf, name, path, prop, unit=None):
     """
@@ -592,12 +588,12 @@ def dt_node_int_prop(kconf, name, path, prop, unit=None):
         'mb' or 'Mb'  divide by 8,388,608 (1 << 23)
         'gb' or 'Gb'  divide by 8,589,934,592 (1 << 33)
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "0"
 
     try:
-        node = edt.get_node(path)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(path)
+    except EDTError:
         return "0"
 
     if name == "dt_node_int_prop_int":
@@ -620,12 +616,12 @@ def dt_node_array_prop(kconf, name, path, prop, index, unit=None):
         'm' or 'M'  divide by 1,048,576 (1 << 20)
         'g' or 'G'  divide by 1,073,741,824 (1 << 30)
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "0"
 
     try:
-        node = edt.get_node(path)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(path)
+    except EDTError:
         return "0"
     if name == "dt_node_array_prop_int":
         return str(_node_array_prop(node, prop, index, unit))
@@ -649,12 +645,12 @@ def dt_node_ph_array_prop(kconf, name, path, prop, index, cell, unit=None):
         'm' or 'M'  divide by 1,048,576 (1 << 20)
         'g' or 'G'  divide by 1,073,741,824 (1 << 30)
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "0"
 
     try:
-        node = edt.get_node(path)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(path)
+    except EDTError:
         return "0"
     if name == "dt_node_ph_array_prop_int":
         return str(_node_ph_array_prop(node, prop, index, cell, unit))
@@ -670,12 +666,12 @@ def dt_node_ph_prop_path(kconf, name, path, prop):
     path to the pointed-to node, or an empty string if there is
     no such node.
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return ""
 
     try:
-        node = edt.get_node(path)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(path)
+    except EDTError:
         return ""
 
     if prop not in node.props:
@@ -695,12 +691,12 @@ def dt_node_str_prop_equals(kconf, _, path, prop, val):
     it will return "y" otherwise return "n".
     """
 
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
     try:
-        node = edt.get_node(path)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(path)
+    except EDTError:
         return "n"
 
     if prop not in node.props:
@@ -720,10 +716,10 @@ def dt_has_compat(kconf, _, compat):
     This function takes a 'compat' and returns "y" if any compatible node
     can be found in the EDT, otherwise it returns "n".
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    return "y" if compat in edt.compat2nodes else "n"
+    return "y" if compat in edtree.compat2nodes else "n"
 
 
 def dt_compat_enabled(kconf, _, compat):
@@ -731,10 +727,10 @@ def dt_compat_enabled(kconf, _, compat):
     This function takes a 'compat' and returns "y" if we find a status "okay"
     compatible node in the EDT otherwise we return "n"
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    return "y" if compat in edt.compat2okay else "n"
+    return "y" if compat in edtree.compat2okay else "n"
 
 
 def dt_compat_on_bus(kconf, _, compat, bus):
@@ -742,11 +738,11 @@ def dt_compat_on_bus(kconf, _, compat, bus):
     This function takes a 'compat' and returns "y" if we find an "enabled"
     compatible node in the EDT which is on bus 'bus'. It returns "n" otherwise.
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    if compat in edt.compat2okay:
-        for node in edt.compat2okay[compat]:
+    if compat in edtree.compat2okay:
+        for node in edtree.compat2okay[compat]:
             if node.on_buses is not None and bus in node.on_buses:
                 return "y"
 
@@ -758,11 +754,11 @@ def dt_compat_any_has_prop(kconf, _, compat, prop):
     node with compatible 'compat' also has a valid property 'prop'.
     It returns "n" otherwise.
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    if compat in edt.compat2okay:
-        for node in edt.compat2okay[compat]:
+    if compat in edtree.compat2okay:
+        for node in edtree.compat2okay[compat]:
             if prop in node.props:
                 return "y"
 
@@ -774,12 +770,12 @@ def dt_nodelabel_has_compat(kconf, _, label, compat):
     If it finds such node, it returns "y" if this node is compatible with
     the provided 'compat'. Otherwise, it return "n" .
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    node = edt.label2node.get(label)
+    node = edtree.label2node.get(label)
 
-    if node and compat in node.compats:
+    if node and compat in node.schemas:
         return "y"
 
     return "n"
@@ -791,15 +787,15 @@ def dt_node_has_compat(kconf, _, path, compat):
     the provided 'compat'. Otherwise, it return "n" .
     """
 
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
     try:
-        node = edt.get_node(path)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(path)
+    except EDTError:
         return "n"
 
-    if node and compat in node.compats:
+    if node and compat in node.schemas:
         return "y"
 
     return "n"
@@ -810,11 +806,11 @@ def dt_nodelabel_enabled_with_compat(kconf, _, label, compat):
     such label can be found in the EDT and that node is compatible with the
     provided 'compat', otherwise it returns "n".
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    if compat in edt.compat2okay:
-        for node in edt.compat2okay[compat]:
+    if compat in edtree.compat2okay:
+        for node in edtree.compat2okay[compat]:
             if label in node.labels:
                 return "y"
 
@@ -829,10 +825,10 @@ def dt_nodelabel_array_prop_has_val(kconf, _, label, prop, val):
     an element equal to the integer 'val', it returns "y".
     Otherwise, it returns "n".
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    node = edt.label2node.get(label)
+    node = edtree.label2node.get(label)
 
     if not node or (prop not in node.props) or (node.props[prop].type != "array"):
         return "n"
@@ -846,10 +842,10 @@ def dt_nodelabel_path(kconf, _, label):
     returns the path to the node which has that label, or an empty
     string if there is no such node.
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return ""
 
-    node = edt.label2node.get(label)
+    node = edtree.label2node.get(label)
 
     return node.path if node else ""
 
@@ -860,12 +856,12 @@ def dt_node_parent(kconf, _, path):
     exists, it will return the path to that parent. Otherwise, an empty string
     will be returned.
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return ""
 
     try:
-        node = edt.get_node(path)
-    except edtlib.EDTError:
+        node = edtree.node_by_path(path)
+    except EDTError:
         return ""
 
     if node is None:
@@ -877,10 +873,10 @@ def dt_gpio_hogs_enabled(kconf, _):
     """
     Return "y" if any GPIO hog node is enabled. Otherwise, return "n".
     """
-    if doc_mode or edt is None:
+    if doc_mode or edtree is None:
         return "n"
 
-    for node in edt.nodes:
+    for node in edtree.nodes:
         if node.gpio_hogs and node.status == "okay":
             return "y"
 

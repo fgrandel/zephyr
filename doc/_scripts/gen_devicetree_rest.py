@@ -18,8 +18,7 @@ import re
 import sys
 import textwrap
 
-from bindings import bindings_from_paths
-from devicetree import edtlib
+from settings import bindings_from_paths, load_vendor_prefixes_txt
 
 import gen_helpers
 
@@ -74,7 +73,7 @@ class VndLookup:
         vnd2vendor = {
             None: GENERIC_OR_VENDOR_INDEPENDENT,
         }
-        vnd2vendor.update(edtlib.load_vendor_prefixes_txt(vendor_prefixes))
+        vnd2vendor.update(load_vendor_prefixes_txt(vendor_prefixes))
 
         logger.info('found %d vendor prefixes in %s', len(vnd2vendor) - 1,
                     vendor_prefixes)
@@ -353,7 +352,7 @@ def write_dummy_index(bindings, out_dir):
     ))
 
     # build compatibles set and dump it
-    compatibles = {binding.compatible for binding in bindings}
+    compatibles = {binding.schema for binding in bindings}
     content += '\n'.join((
         f'.. dtcompatible:: {compatible}' for compatible in compatibles
     ))
@@ -459,7 +458,7 @@ def write_orphans(bindings, base_binding, vnd_lookup, driver_sources, out_dir):
 
     compat2bindings = defaultdict(list)
     for binding in bindings:
-        compat2bindings[binding.compatible].append(binding)
+        compat2bindings[binding.schema].append(binding)
     dup_compat2bindings = {compatible: bindings for compatible, bindings
                            in compat2bindings.items() if len(bindings) > 1}
 
@@ -573,8 +572,8 @@ def print_binding_page(binding, base_names, vnd_lookup, driver_sources,dup_compa
         )
 
     # Binding description.
-    if binding.bus:
-        bus_help = f'These nodes are "{binding.bus}" bus nodes.'
+    if binding.buses:
+        bus_help = f'These nodes are "{binding.buses}" bus nodes.'
     else:
         bus_help = ''
     print_block(f'''\

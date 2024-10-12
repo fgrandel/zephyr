@@ -6,7 +6,7 @@
 # Note: Do not access private (_-prefixed) identifiers anywhere in this script.
 
 """
-This script builds on the pickled devicetree representation (zephyr/edt.pickle),
+This script builds on the pickled devicetree representation (zephyr/stree.pickle),
 Kconfig (zephyr/.config) and information extracted from the Zephyr binary
 (zephyr/zephyr.elf) to generate an image of the selected settings compatible
 with the NVS settings backend. You can include arbitrary configuration subtrees
@@ -29,11 +29,12 @@ from ctypes import Structure, sizeof, c_uint8, c_uint16
 from elf_parser import ZephyrElf, Device
 from enum import IntEnum
 from dataclasses import dataclass, field
-from devicetree.edtlib import EDT, EDTNode, EDTProperty
 from functools import cached_property
 from intelhex import IntelHex
 from math import floor
 from pathlib import Path
+from settings import EDTree, STree
+from settings.stree import _STPartialTreeNode, _STProperty
 from textwrap import dedent
 from typing import Final, Optional, Iterator
 
@@ -53,7 +54,7 @@ class Config:
 
         # Input files
         input_files = [
-            input_dir / "edt.pickle",
+            input_dir / "stree.pickle",
             input_dir / "zephyr.elf",
             input_dir / ".config",
         ]
@@ -124,7 +125,7 @@ class Config:
             "-i",
             "--input-dir",
             help="""
-                 The build directory containing the zephyr/edt.pickle,
+                 The build directory containing the zephyr/stree.pickle,
                  zephyr/zephyr.elf, and zephyr/.config files. This also is the
                  default output directory unless the --output-dir option is
                  used. If not given, the current working directory is used.
@@ -453,12 +454,12 @@ class SettingsNvs:
 
     def __init__(
         self,
-        edt: EDT,
+        edtree: EDTree,
         elf: ZephyrElf,
         dot_config: Path | str,
     ):
         self.last_name_id = SettingsNvs.NAME_CNT_ID
-        self.nvs_fs = SettingsNvs._get_nvs_fs(edt, elf, dot_config)
+        self.nvs_fs = SettingsNvs._get_nvs_fs(edtree, elf, dot_config)
 
     def nvs_write_setting(self, name: str, value: int, int_len: NvsFs.IntLen = None):
         if (
@@ -478,8 +479,8 @@ class SettingsNvs:
         self.nvs_fs.nvs_write(name_id, name)
 
     @staticmethod
-    def _get_settings_partition(edt: EDT) -> FlashPartition:
-        fixed_partitions_list = edt.compat2okay["fixed-partitions"]
+    def _get_settings_partition(edtree: EDTree) -> FlashPartition:
+        fixed_partitions_list = edtree.compat2okay["fixed-partitions"]
 
         enabled_partitions = sorted(
             [
@@ -492,7 +493,7 @@ class SettingsNvs:
             key=lambda node: node.dep_ordinal,
         )
 
-        settings_partition = edt.chosen_node("zephyr,settings-partition")
+        settings_partition = edtree.chosen_node("zephyr,settings-partition")
 
         if not settings_partition:
             settings_partition = next(
@@ -512,10 +513,10 @@ class SettingsNvs:
 
         flash_controller = settings_partition.flash_controller
         assert flash_controller
-        erase_value = flash_controller.props.get("erase-value")
+        erase_value = flash_controller._props.get("erase-value")
 
         flash_layout = settings_partition.parent.parent
-        if not (flash_layout and "soc-nv-flash" in flash_layout.compats):
+        if not (flash_layout and "soc-nv-flash" in flash_layout._compats):
             raise ValueError(
                 "Only SoC nonvolatile flash ('soc-nv-flash') partitions are currently supported"
             )
@@ -523,11 +524,11 @@ class SettingsNvs:
         # TODO: This is currently a workaround to get the sector size. It should be
         # correct in most cases, but in principle it may be different from the
         # sector size returned by the driver's `api->page_layout()` call.
-        sector_size = flash_layout.props.get("erase-block-size")
+        sector_size = flash_layout._props.get("erase-block-size")
         if not sector_size:
             raise ValueError("Erase block size not found in 'soc-nv-flash' node.")
 
-        write_block_size = flash_layout.props.get("write-block-size")
+        write_block_size = flash_layout._props.get("write-block-size")
         if not write_block_size:
             raise ValueError("Write block size not found in 'soc-nv-flash' node.")
 
@@ -556,7 +557,7 @@ class SettingsNvs:
         return flash_partition
 
     @staticmethod
-    def _get_nvs_fs(edt: EDT, elf: ZephyrElf, dot_config: Path | str) -> NvsFs:
+    def _get_nvs_fs(edtree: EDTree, elf: ZephyrElf, dot_config: Path | str) -> NvsFs:
         config = _find_in_kconfig(
             dot_config,
             [
@@ -568,7 +569,7 @@ class SettingsNvs:
         nvs_sector_size_mult, nvs_sector_count = map(int, config[:2])
         nvs_data_crc = bool(config[2])
 
-        settings_partition = SettingsNvs._get_settings_partition(edt)
+        settings_partition = SettingsNvs._get_settings_partition(edtree)
         nvs_sector_size = nvs_sector_size_mult * settings_partition.sector_size
         nvs_sector_count = min(
             floor(settings_partition.size / nvs_sector_size), nvs_sector_count
@@ -587,17 +588,19 @@ class SettingsNvs:
         return bytes(self.nvs_fs.flash_partition.data)
 
 
-def config_subtree_nodes(edt: EDT, subtree: str | EDTNode) -> Iterator[EDTNode]:
+def config_subtree_nodes(
+    edtree: EDTree, subtree: str | _STPartialTreeNode
+) -> Iterator[_STPartialTreeNode]:
     """
     A depth-first iterator of all subnodes of the given configuration path or
     node (including the given node itself).
     """
     if isinstance(subtree, str):
         if subtree.startswith("/"):
-            node = edt.get_node(subtree)
+            node = edtree.node_by_path(subtree)
         elif subtree.startswith("&"):
             try:
-                node = edt.label2node[subtree[1:]]
+                node = edtree.label2node[subtree[1:]]
             except KeyError:
                 node = None
         else:
@@ -605,18 +608,20 @@ def config_subtree_nodes(edt: EDT, subtree: str | EDTNode) -> Iterator[EDTNode]:
     else:
         node = subtree
 
-    if not isinstance(node, EDTNode):
+    if not isinstance(node, _STPartialTreeNode):
         raise ValueError(f"Invalid node reference: {subtree}.")
 
     yield node
 
     # depth first
     for child in node.children.values():
-        yield from config_subtree_nodes(edt, child)
+        yield from config_subtree_nodes(edtree, child)
 
 
 def config_convert_phandles(
-    phandles: EDTNode | list[EDTNode], prop_type: str, devices_by_ord: dict[int, Device]
+    phandles: _STPartialTreeNode | list[_STPartialTreeNode],
+    prop_type: str,
+    devices_by_ord: dict[int, Device],
 ):
     phandles = phandles if isinstance(phandles, list) else [phandles]
 
@@ -663,8 +668,8 @@ def min_bytes(val: int) -> int:
 
 
 def config_prepare_property(
-    prop: EDTProperty,
-    root_node: EDTNode,
+    prop: _STProperty,
+    root_node: _STPartialTreeNode,
     prefix: Optional[str],
     devices_by_ord: dict[int, Device],
     verbose: bool = False,
@@ -729,22 +734,23 @@ def main():
         )
 
     with open(cfg.edt_pickle_path, "rb") as f:
-        edt: EDT = pickle.load(f)
+        stree: STree = pickle.load(f)
+    edtree = stree.edtree
 
-    elf = ZephyrElf(cfg.zephyr_elf_path, edt, cfg.devices_start_symbol)
+    elf = ZephyrElf(cfg.zephyr_elf_path, edtree, cfg.devices_start_symbol)
     devices_by_ord: dict[int, Device] = {
         device.ordinal: device for device in elf.devices if device.edt_node
     }
 
-    settings_nvs = SettingsNvs(edt, elf, cfg.dot_config_path)
+    settings_nvs = SettingsNvs(edtree, elf, cfg.dot_config_path)
 
     for prefix, subtree_path in cfg.subtrees_with_prefix:
         root_node = None
-        for node in config_subtree_nodes(edt, subtree_path):
+        for node in config_subtree_nodes(edtree, subtree_path):
             if not root_node:
                 root_node = node
 
-            for prop in node.props.values():
+            for prop in node._props.values():
                 if prop.name in cfg.filtered_props:
                     continue
 

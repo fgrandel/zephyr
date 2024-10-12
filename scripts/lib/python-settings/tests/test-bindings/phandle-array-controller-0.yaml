@@ -2,6 +2,6 @@
 
 description: Controller with zero data values
 
-compatible: "phandle-array-controller-0"
+schema: "phandle-array-controller-0"
 
 phandle-array-foo-cells: []

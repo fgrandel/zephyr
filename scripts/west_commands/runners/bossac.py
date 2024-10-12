@@ -14,6 +14,7 @@ import sys
 import time
 
 from runners.core import ZephyrBinaryRunner, RunnerCaps
+from settings import STree
 
 if platform.system() == 'Darwin':
     DEFAULT_BOSSAC_PORT = None
@@ -94,29 +95,29 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
         return self.build_conf.getboolean('CONFIG_USE_DT_CODE_PARTITION')
 
     def get_chosen_code_partition_node(self):
-        # Get the EDT Node corresponding to the zephyr,code-partition
+        # Get the EDTree node corresponding to the zephyr,code-partition
         # chosen DT node
 
         # Ensure the build directory has a compiled DTS file
         # where we expect it to be.
         b = pathlib.Path(self.cfg.build_dir)
-        edt_pickle = b / 'zephyr' / 'edt.pickle'
-        if not edt_pickle.is_file():
-            error_msg = "can't load devicetree; expected to find:" \
-	                + str(edt_pickle)
+        stree_pickle = b / "zephyr" / "stree.pickle"
+        if not stree_pickle.is_file():
+            error_msg = "can't load devicetree; expected to find:" + str(stree_pickle)
 
             raise RuntimeError(error_msg)
 
         # Load the devicetree.
         try:
-            with open(edt_pickle, 'rb') as f:
-                edt = pickle.load(f)
+            with open(stree_pickle, "rb") as f:
+                stree: STree = pickle.load(f)
+            edtree = stree.edtree
         except ModuleNotFoundError:
             error_msg = "could not load devicetree, something may be wrong " \
                     + "with the python environment"
             raise RuntimeError(error_msg)
 
-        return edt.chosen_node('zephyr,code-partition')
+        return edtree.chosen_node("zephyr,code-partition")
 
     def get_board_name(self):
         if 'CONFIG_BOARD' not in self.build_conf:

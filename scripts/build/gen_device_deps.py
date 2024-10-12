@@ -33,10 +33,12 @@ import pickle
 
 from elf_parser import ZephyrElf
 
-# This is needed to load edt.pickle files.
+# This is needed to load stree.pickle files.
 sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-settings", "src")
 )
+
+from settings import STree
 
 def parse_args():
     global args
@@ -122,11 +124,12 @@ def c_handle_array(dev, handles, dynamic_deps, extra_support_handles=0):
 def main():
     parse_args()
 
-    edtser = os.path.join(os.path.split(args.kernel)[0], "edt.pickle")
-    with open(edtser, 'rb') as f:
-        edt = pickle.load(f)
+    stree_path = os.path.join(os.path.split(args.kernel)[0], "stree.pickle")
+    with open(stree_path, "rb") as f:
+        stree: STree = pickle.load(f)
+    edtree = stree.edtree
 
-    parsed_elf = ZephyrElf(args.kernel, edt, args.start_symbol)
+    parsed_elf = ZephyrElf(args.kernel, edtree, args.start_symbol)
     if parsed_elf.relocatable:
         # While relocatable elf files will load cleanly, the pointers pulled from
         # the symbol table are invalid (as expected, because the structures have not

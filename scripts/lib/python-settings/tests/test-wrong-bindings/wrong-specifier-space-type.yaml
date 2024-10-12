@@ -2,7 +2,7 @@
 
 description: Device.wrong_specifier_space_type test
 
-compatible: "wrong_specifier_space_type"
+schema: "wrong_specifier_space_type"
 
 properties:
   wrong-type-for-specifier-space:

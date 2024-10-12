@@ -2,6 +2,6 @@
 
 description: Foo bus controller
 
-compatible: "foo-bus"
+schema: "foo-bus"
 
 bus: "foo"

@@ -2,7 +2,7 @@
 
 description: Test property-blocklist filters set by including bindings.
 
-compatible: "top-blocklist"
+schema: "top-blocklist"
 
 include:
   - name: inc-base.yaml

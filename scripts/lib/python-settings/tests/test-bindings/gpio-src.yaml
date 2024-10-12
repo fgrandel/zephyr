@@ -2,7 +2,7 @@
 
 description: GPIO source for mapping test
 
-compatible: "gpio-src"
+schema: "gpio-src"
 
 properties:
   foo-gpios:

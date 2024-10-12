@@ -2,7 +2,7 @@
 
 description: Device.props test
 
-compatible: "props"
+schema: "props"
 
 properties:
   nonexistent-boolean:

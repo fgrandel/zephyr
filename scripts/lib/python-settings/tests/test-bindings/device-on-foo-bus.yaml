@@ -2,6 +2,6 @@
 
 description: Device on foo bus
 
-compatible: "on-bus"
+schema: "on-bus"
 
 on-bus: "foo"

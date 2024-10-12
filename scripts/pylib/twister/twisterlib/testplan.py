@@ -43,11 +43,11 @@ ZEPHYR_BASE = os.getenv("ZEPHYR_BASE")
 if not ZEPHYR_BASE:
     sys.exit("$ZEPHYR_BASE environment variable undefined")
 
-# This is needed to load edt.pickle files.
+# This is needed to load stree.pickle files.
 sys.path.insert(
     0, os.path.join(ZEPHYR_BASE, "scripts", "lib", "python-settings", "src")
 )
-from devicetree import edtlib  # pylint: disable=unused-import
+from settings import EDTree  # pylint: disable=unused-import
 
 sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts/"))
 

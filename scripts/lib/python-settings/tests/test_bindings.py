@@ -3,10 +3,10 @@
 
 import contextlib
 import os
-
 import pytest
 
-import bindings
+from settings.devicetree.edtree import _EDTBinding
+from settings.error import EDTError, STBindingError
 
 # Test suite for bindings.py.
 #
@@ -36,44 +36,49 @@ def test_include_filters():
         "include-2.yaml": "test-bindings-include/include-2.yaml",
     }
 
-    with pytest.raises(bindings.BindingError) as e:
+    with pytest.raises(STBindingError) as e:
         with from_here():
-            bindings.Binding(
-                "test-bindings-include/allow-and-blocklist.yaml", fname2path
+            _EDTBinding(
+                "test-bindings-include/allow-and-blocklist.yaml", fname2path=fname2path
             )
     assert (
         "should not specify both 'property-allowlist:' and 'property-blocklist:'"
         in str(e.value)
     )
 
-    with pytest.raises(bindings.BindingError) as e:
+    with pytest.raises(STBindingError) as e:
         with from_here():
-            bindings.Binding(
-                "test-bindings-include/allow-and-blocklist-child.yaml", fname2path
+            _EDTBinding(
+                "test-bindings-include/allow-and-blocklist-child.yaml",
+                fname2path=fname2path,
             )
     assert (
         "should not specify both 'property-allowlist:' and 'property-blocklist:'"
         in str(e.value)
     )
 
-    with pytest.raises(bindings.BindingError) as e:
+    with pytest.raises(STBindingError) as e:
         with from_here():
-            bindings.Binding("test-bindings-include/allow-not-list.yaml", fname2path)
+            _EDTBinding(
+                "test-bindings-include/allow-not-list.yaml", fname2path=fname2path
+            )
     value_str = str(e.value)
     assert value_str.startswith("'property-allowlist' value")
     assert value_str.endswith("should be a list")
 
-    with pytest.raises(bindings.BindingError) as e:
+    with pytest.raises(STBindingError) as e:
         with from_here():
-            bindings.Binding("test-bindings-include/block-not-list.yaml", fname2path)
+            _EDTBinding(
+                "test-bindings-include/block-not-list.yaml", fname2path=fname2path
+            )
     value_str = str(e.value)
     assert value_str.startswith("'property-blocklist' value")
     assert value_str.endswith("should be a list")
 
-    with pytest.raises(bindings.BindingError) as e:
+    with pytest.raises(STBindingError) as e:
         with from_here():
-            binding = bindings.Binding(
-                "test-bindings-include/include-invalid-keys.yaml", fname2path
+            binding = _EDTBinding(
+                "test-bindings-include/include-invalid-keys.yaml", fname2path=fname2path
             )
     value_str = str(e.value)
     assert value_str.startswith(
@@ -83,10 +88,10 @@ def test_include_filters():
     assert "bad-key-1" in value_str
     assert "bad-key-2" in value_str
 
-    with pytest.raises(bindings.BindingError) as e:
+    with pytest.raises(STBindingError) as e:
         with from_here():
-            binding = bindings.Binding(
-                "test-bindings-include/include-invalid-type.yaml", fname2path
+            binding = _EDTBinding(
+                "test-bindings-include/include-invalid-type.yaml", fname2path=fname2path
             )
     value_str = str(e.value)
     assert value_str.startswith(
@@ -94,10 +99,10 @@ def test_include_filters():
         "should be a string or list, but has type "
     )
 
-    with pytest.raises(bindings.BindingError) as e:
+    with pytest.raises(STBindingError) as e:
         with from_here():
-            binding = bindings.Binding(
-                "test-bindings-include/include-no-name.yaml", fname2path
+            binding = _EDTBinding(
+                "test-bindings-include/include-no-name.yaml", fname2path=fname2path
             )
     value_str = str(e.value)
     assert value_str.startswith("'include:' element")
@@ -106,47 +111,66 @@ def test_include_filters():
     )
 
     with from_here():
-        binding = bindings.Binding("test-bindings-include/allowlist.yaml", fname2path)
+        binding = _EDTBinding(
+            "test-bindings-include/allowlist.yaml", fname2path=fname2path
+        )
         assert set(binding.prop2specs.keys()) == {"x"}  # 'x' is allowed
 
-        binding = bindings.Binding(
-            "test-bindings-include/empty-allowlist.yaml", fname2path
+        binding = _EDTBinding(
+            "test-bindings-include/empty-allowlist.yaml", fname2path=fname2path
         )
         assert set(binding.prop2specs.keys()) == set()  # nothing is allowed
 
-        binding = bindings.Binding("test-bindings-include/blocklist.yaml", fname2path)
+        binding = _EDTBinding(
+            "test-bindings-include/blocklist.yaml", fname2path=fname2path
+        )
         assert set(binding.prop2specs.keys()) == {"y", "z"}  # 'x' is blocked
 
-        binding = bindings.Binding(
-            "test-bindings-include/empty-blocklist.yaml", fname2path
+        binding = _EDTBinding(
+            "test-bindings-include/empty-blocklist.yaml", fname2path=fname2path
         )
         assert set(binding.prop2specs.keys()) == {"x", "y", "z"}  # nothing is blocked
 
-        binding = bindings.Binding("test-bindings-include/intermixed.yaml", fname2path)
+        binding = _EDTBinding(
+            "test-bindings-include/intermixed.yaml", fname2path=fname2path
+        )
         assert set(binding.prop2specs.keys()) == {"x", "a"}
 
-        binding = bindings.Binding(
-            "test-bindings-include/include-no-list.yaml", fname2path
+        binding = _EDTBinding(
+            "test-bindings-include/include-no-list.yaml", fname2path=fname2path
         )
         assert set(binding.prop2specs.keys()) == {"x", "y", "z"}
 
-        binding = bindings.Binding(
-            "test-bindings-include/filter-child-bindings.yaml", fname2path
+        binding = _EDTBinding(
+            "test-bindings-include/filter-child-bindings.yaml", fname2path=fname2path
         )
-        child = binding.child_binding
-        grandchild = child.child_binding
+        child_bindings = binding.prop2bindings[".*"][1]
+        assert len(child_bindings) == 1
+        child_binding = child_bindings[0]
+        grandchild_bindings = child_bindings[0].prop2bindings[".*"][1]
+        assert len(grandchild_bindings) == 1
+        grandchild_binding = grandchild_bindings[0]
         assert set(binding.prop2specs.keys()) == {"x"}
-        assert set(child.prop2specs.keys()) == {"child-prop-2"}
-        assert set(grandchild.prop2specs.keys()) == {"grandchild-prop-1"}
+        assert set(child_binding.prop2specs.keys()) == {"child-prop-2"}
+        assert set(grandchild_binding.prop2specs.keys()) == {"grandchild-prop-1"}
 
-        binding = bindings.Binding(
-            "test-bindings-include/allow-and-blocklist-multilevel.yaml", fname2path
+        binding = _EDTBinding(
+            "test-bindings-include/allow-and-blocklist-multilevel.yaml",
+            fname2path=fname2path,
         )
         assert set(binding.prop2specs.keys()) == {"x"}  # 'x' is allowed
-        child = binding.child_binding
-        assert set(child.prop2specs.keys()) == {
+        child_bindings = binding.prop2bindings[".*"][1]
+        assert len(child_bindings) == 2
+        assert child_bindings[0].path == "test-bindings-include/include.yaml"
+        assert set(child_bindings[0].prop2specs.keys()) == {
             "child-prop-1",
             "child-prop-2",
+        }
+        assert (
+            child_bindings[1].path
+            == "test-bindings-include/allow-and-blocklist-multilevel.yaml"
+        )
+        assert set(child_bindings[1].prop2specs.keys()) == {
             "x",
             "z",
         }  # root level 'y' is blocked
@@ -161,11 +185,11 @@ def test_include_paths():
     }
 
     with from_here():
-        top = bindings.Binding("test-bindings-include/top.yaml", fname2path)
+        top = _EDTBinding("test-bindings-include/top.yaml", fname2path=fname2path)
 
-        assert "modified.yaml" == os.path.basename(top.prop2specs["x"].path)
-        assert "base.yaml" == os.path.basename(top.prop2specs["y"].path)
-        assert "top.yaml" == os.path.basename(top.prop2specs["p"].path)
+        assert "modified.yaml" == os.path.basename(top.prop2specs["x"][1].path)
+        assert "base.yaml" == os.path.basename(top.prop2specs["y"][1].path)
+        assert "top.yaml" == os.path.basename(top.prop2specs["p"][1].path)
 
 
 def test_include_filters_included_bindings():
@@ -176,15 +200,15 @@ def test_include_filters_included_bindings():
     }
 
     with from_here():
-        top_allows = bindings.Binding(
-            "test-bindings-include/top-allows.yaml", fname2path
+        top_allows = _EDTBinding(
+            "test-bindings-include/top-allows.yaml", fname2path=fname2path
         )
     assert top_allows.prop2specs.get("x")
     assert not top_allows.prop2specs.get("y")
 
     with from_here():
-        top_blocks = bindings.Binding(
-            "test-bindings-include/top-blocks.yaml", fname2path
+        top_blocks = _EDTBinding(
+            "test-bindings-include/top-blocks.yaml", fname2path=fname2path
         )
     assert not top_blocks.prop2specs.get("x")
     assert top_blocks.prop2specs.get("y")
@@ -194,17 +218,15 @@ def test_wrong_props():
     """Test Node.wrong_props (derived from DT and 'properties:' in the binding)"""
 
     with from_here():
-        with pytest.raises(bindings.BindingError) as e:
-            bindings.Binding(
-                "test-wrong-bindings/wrong-specifier-space-type.yaml", None
-            )
+        with pytest.raises(EDTError) as e:
+            _EDTBinding("test-wrong-bindings/wrong-specifier-space-type.yaml", None)
         assert (
             "'specifier-space' in 'properties: wrong-type-for-specifier-space' has type 'phandle', expected 'phandle-array'"
             in str(e.value)
         )
 
-        with pytest.raises(bindings.BindingError) as e:
-            bindings.Binding("test-wrong-bindings/wrong-phandle-array-name.yaml", None)
+        with pytest.raises(EDTError) as e:
+            _EDTBinding("test-wrong-bindings/wrong-phandle-array-name.yaml", None)
         value_str = str(e.value)
         assert value_str.startswith("'wrong-phandle-array-name' in 'properties:'")
         assert value_str.endswith("but no 'specifier-space' was provided.")

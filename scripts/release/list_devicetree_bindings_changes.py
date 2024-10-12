@@ -23,11 +23,11 @@ SCRIPTS = ZEPHYR_BASE / 'scripts'
 
 sys.path.insert(0, str(SCRIPTS / "lib" / "python-settings" / "src"))
 
-from devicetree.edtlib import load_vendor_prefixes_txt
-from bindings import Binding, bindings_from_paths
+from settings import load_vendor_prefixes_txt, bindings_from_paths
+from settings.devicetree.edtree import _EDTBinding
 
 # The Compat type is a (compatible, on_bus) pair, which is used as a
-# lookup key for bindings. The name "compat" matches edtlib's internal
+# lookup key for bindings. The name "compat" matches edtree's internal
 # variable for this; it's a bit of a misnomer, but let's be
 # consistent.
 @dataclass
@@ -44,8 +44,8 @@ class BindingChange:
     below for concrete changes.
     '''
 
-Compat2Binding = Dict[Compat, Binding]
-Binding2Changes = Dict[Binding, List[BindingChange]]
+Compat2Binding = Dict[Compat, _EDTBinding]
+Binding2Changes = Dict[_EDTBinding, List[BindingChange]]
 
 @dataclass
 class Changes:
@@ -195,9 +195,9 @@ def get_binding2changes(
 
     return ret
 
+
 def get_binding_changes(
-        binding_start: Binding,
-        binding_end: Binding
+    binding_start: _EDTBinding, binding_end: _EDTBinding
 ) -> List[BindingChange]:
     '''Enumerate the changes to a binding given its start and end values.'''
     ret: List[BindingChange] = []
@@ -227,9 +227,9 @@ def get_binding_changes(
 
     return ret
 
+
 def get_modified_specifier2cells(
-        binding_start: Binding,
-        binding_end: Binding
+    binding_start: _EDTBinding, binding_end: _EDTBinding
 ) -> List[BindingChange]:
     ret: List[BindingChange] = []
     start = binding_start.specifier2cells
@@ -252,9 +252,9 @@ def get_modified_specifier2cells(
 
     return ret
 
+
 def get_modified_buses(
-        binding_start: Binding,
-        binding_end: Binding
+    binding_start: _EDTBinding, binding_end: _EDTBinding
 ) -> List[BindingChange]:
     start = binding_start.buses
     end = binding_end.buses
@@ -264,24 +264,23 @@ def get_modified_buses(
 
     return [ModifiedBuses(start=start, end=end)]
 
+
 def get_added_properties(
-        binding_start: Binding,
-        binding_end: Binding
+    binding_start: _EDTBinding, binding_end: _EDTBinding
 ) -> List[BindingChange]:
     return [AddedProperty(prop) for prop in binding_end.prop2specs
             if prop not in binding_start.prop2specs]
 
+
 def get_removed_properties(
-        binding_start: Binding,
-        binding_end: Binding
+    binding_start: _EDTBinding, binding_end: _EDTBinding
 ) -> List[BindingChange]:
     return [RemovedProperty(prop) for prop in binding_start.prop2specs
             if prop not in binding_end.prop2specs]
 
+
 def get_modified_property_type(
-        binding_start: Binding,
-        binding_end: Binding,
-        common_props: Set[str]
+    binding_start: _EDTBinding, binding_end: _EDTBinding, common_props: Set[str]
 ) -> List[BindingChange]:
     return get_modified_property_helper(
         common_props,
@@ -289,10 +288,9 @@ def get_modified_property_type(
         lambda prop: binding_end.prop2specs[prop].type,
         ModifiedPropertyType)
 
+
 def get_modified_property_enum(
-        binding_start: Binding,
-        binding_end: Binding,
-        common_props: Set[str]
+    binding_start: _EDTBinding, binding_end: _EDTBinding, common_props: Set[str]
 ) -> List[BindingChange]:
     return get_modified_property_helper(
         common_props,
@@ -300,10 +298,9 @@ def get_modified_property_enum(
         lambda prop: binding_end.prop2specs[prop].enum,
         ModifiedPropertyEnum)
 
+
 def get_modified_property_const(
-        binding_start: Binding,
-        binding_end: Binding,
-        common_props: Set[str]
+    binding_start: _EDTBinding, binding_end: _EDTBinding, common_props: Set[str]
 ) -> List[BindingChange]:
     return get_modified_property_helper(
         common_props,
@@ -311,10 +308,9 @@ def get_modified_property_const(
         lambda prop: binding_end.prop2specs[prop].const,
         ModifiedPropertyConst)
 
+
 def get_modified_property_default(
-        binding_start: Binding,
-        binding_end: Binding,
-        common_props: Set[str]
+    binding_start: _EDTBinding, binding_end: _EDTBinding, common_props: Set[str]
 ) -> List[BindingChange]:
     return get_modified_property_helper(
         common_props,
@@ -322,10 +318,9 @@ def get_modified_property_default(
         lambda prop: binding_end.prop2specs[prop].default,
         ModifiedPropertyDefault)
 
+
 def get_modified_property_deprecated(
-        binding_start: Binding,
-        binding_end: Binding,
-        common_props: Set[str]
+    binding_start: _EDTBinding, binding_end: _EDTBinding, common_props: Set[str]
 ) -> List[BindingChange]:
     return get_modified_property_helper(
         common_props,
@@ -333,16 +328,16 @@ def get_modified_property_deprecated(
         lambda prop: binding_end.prop2specs[prop].deprecated,
         ModifiedPropertyDeprecated)
 
+
 def get_modified_property_required(
-        binding_start: Binding,
-        binding_end: Binding,
-        common_props: Set[str]
+    binding_start: _EDTBinding, binding_end: _EDTBinding, common_props: Set[str]
 ) -> List[BindingChange]:
     return get_modified_property_helper(
         common_props,
         lambda prop: binding_start.prop2specs[prop].required,
         lambda prop: binding_end.prop2specs[prop].required,
         ModifiedPropertyRequired)
+
 
 def get_modified_property_helper(
         common_props: Set[str],
@@ -381,8 +376,9 @@ def load_compat2binding(commit: str) -> Compat2Binding:
                                            recursive=True))
             binding_files.extend(glob.glob(f'{tmpdir_bindings}/**/*.yaml',
                                            recursive=True))
-            bindings: List[Binding] = bindings_from_paths(
-                binding_files, ignore_errors=True)
+            bindings: List[_EDTBinding] = bindings_from_paths(
+                binding_files, ignore_errors=True
+            )
             for binding in bindings:
                 compat = Compat(binding.compatible, binding.on_bus)
                 assert compat not in ret
@@ -390,9 +386,11 @@ def load_compat2binding(commit: str) -> Compat2Binding:
 
     return ret
 
-def compatible_sort_key(data: Union[Compat, Binding]) -> str:
+
+def compatible_sort_key(data: Union[Compat, _EDTBinding]) -> str:
     '''Sort key used by Printer.'''
     return (data.compatible, data.on_bus or '')
+
 
 class Printer:
     '''Helper class for formatting output.'''
@@ -436,9 +434,7 @@ class Printer:
                 self.print_binding2changes(modified)
 
     def print_compat2binding(
-            self,
-            compat2binding: Compat2Binding,
-            formatter: Callable[[Binding], str]
+        self, compat2binding: Compat2Binding, formatter: Callable[[_EDTBinding], str]
     ) -> None:
         for compat in sorted(compat2binding, key=compatible_sort_key):
             self.print(f'    * {formatter(compat2binding[compat])}')

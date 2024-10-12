@@ -5,22 +5,23 @@ include_guard(GLOBAL)
 include(extensions)
 include(python)
 include(boards)
-include(pre_dt)
+include(pre_settings)
 find_package(HostTools)
 find_package(Dtc 1.4.6)
 
-# This module makes information from the devicetree available to
-# various build stages, as well as to other arbitrary Python scripts:
+# This module makes information from the devicetree and configuration tree
+# available to various build stages, as well as to other arbitrary Python
+# scripts:
 #
-#   - To Zephyr and application source code files, as a C macro API
-#     defined in <zephyr/devicetree.h>
+#   - To Zephyr and application source code files, as C macro APIs
+#     defined in <zephyr/devicetree.h> and <zephyr/config.h>
 #
 #   - To other arbitrary Python scripts (like twister) using a
-#     serialized edtlib.EDT object in Python's pickle format
+#     serialized settings.STree object in Python's pickle format
 #     (https://docs.python.org/3/library/pickle.html)
 #
-#   - To users as a final devicetree source (DTS) file which can
-#     be used for debugging
+#   - To users as a final devicetree source (DTS) file and a configuration YAML
+#     file which can be used for debugging
 #
 #   - To CMake files, after this module has finished running, using
 #     devicetree extensions defined in cmake/modules/extensions.cmake
@@ -32,7 +33,7 @@ find_package(Dtc 1.4.6)
 # See the specific API documentation for each of these cases for more
 # information on what is currently available to you.
 #
-# We rely on the C preprocessor, the devicetree python package, and
+# We rely on the C preprocessor, the settings python package, and
 # files in scripts/dts to make all this work. We also optionally will
 # run the dtc tool if it is found, in order to catch any additional
 # warnings or errors it generates.
@@ -46,6 +47,7 @@ find_package(Dtc 1.4.6)
 #    - SETTINGS_FILES: set to the path(s) of the base devicetree and
 #      configuration files of the board.
 #    - ${BINARY_DIR_INCLUDE_GENERATED}/devicetree_generated.h exists
+#    - ${BINARY_DIR_INCLUDE_GENERATED}/config_generated.h exists
 #
 # 2. The following has happened if a devicetree was found and
 #    no errors occurred:
@@ -54,12 +56,20 @@ find_package(Dtc 1.4.6)
 #      value of DTS_ROOT_BINDINGS
 #    - DTS_ROOT_BINDINGS is set to a ;-list of locations where DT
 #      bindings were found
+#    - CACHED_CONFIG_ROOT_BINDINGS is set in the cache to the
+#      value of CONFIG_ROOT_BINDINGS
+#    - CONFIG_ROOT_BINDINGS is set to a ;-list of locations where
+#      configuration bindings were found
 #    - ${PROJECT_BINARY_DIR}/zephyr.dts exists
-#    - ${PROJECT_BINARY_DIR}/edt.pickle exists
+#    - ${PROJECT_BINARY_DIR}/zephyr.config.yaml exists
+#    - ${PROJECT_BINARY_DIR}/stree.pickle exists
 #    - ${KCONFIG_BINARY_DIR}/Kconfig.dts exists
 #    - DTS_INCLUDE_FILES is set to a ;-list of all devicetree files
 #      used in this build, including transitive includes (the build
 #      system will be regenerated if any of those files change
+#    - CONFIG_INCLUDE_FILES is set to a ;-list of all configuration files used
+#      in this build, including transitive includes (the build system will be
+#      regenerated if any of those files change
 #    - the devicetree extensions in the extensions.cmake module
 #      will be ready for use in other CMake list files that run
 #      after this module
@@ -75,11 +85,14 @@ find_package(Dtc 1.4.6)
 # - DTS_ROOT_SYSTEM_INCLUDE_DIRS: set to "PATH1 PATH2 ...",
 #   with one path per potential location where C preprocessor #includes
 #   may be found for devicetree files
+# - CONFIG_ROOT_SYSTEM_INCLUDE_DIRS: set to "PATH1 PATH2 ...",
+#   with one path per potential location where C preprocessor #includes
+#   may be found for configuration files
 # - KCONFIG_BINARY_DIR: where to put generated Kconfig files
 #
 # Optional variables:
-# - CMAKE_DTS_PREPROCESSOR: the path to the preprocessor to use
-#   for devicetree files
+# - CMAKE_SETTINGS_PREPROCESSOR: the path to the preprocessor to use
+#   for devicetree and configuration files
 # - EXTRA_DTC_FLAGS: list of extra command line options to pass to
 #   dtc when using it to check for additional errors and warnings;
 #   invalid flags are automatically filtered out of the list
@@ -93,20 +106,23 @@ find_package(Dtc 1.4.6)
 set(DT_SCRIPTS                  ${ZEPHYR_BASE}/scripts/dts)
 
 # This parses and collects the DT information
-set(GEN_EDT_SCRIPT              ${DT_SCRIPTS}/gen_edt.py)
+set(GEN_SETTINGS_SCRIPT         ${DT_SCRIPTS}/gen_stree.py)
 # This generates DT information needed by the C macro APIs,
 # along with a few other things.
 set(GEN_DEFINES_SCRIPT          ${DT_SCRIPTS}/gen_defines.py)
-# The edtlib.EDT object in pickle format.
-set(EDT_PICKLE                  ${PROJECT_BINARY_DIR}/edt.pickle)
+# The stree.STree object in pickle format.
+set(STREE_PICKLE                ${PROJECT_BINARY_DIR}/stree.pickle)
 # The generated file containing the final DTS, for debugging.
 set(ZEPHYR_DTS                  ${PROJECT_BINARY_DIR}/zephyr.dts)
+set(ZEPHYR_CONFIG               ${PROJECT_BINARY_DIR}/zephyr.config.yaml)
 # The generated C header needed by <zephyr/devicetree.h>
 set(DEVICETREE_GENERATED_H      ${BINARY_DIR_INCLUDE_GENERATED}/devicetree_generated.h)
+set(CONFIG_GENERATED_H          ${BINARY_DIR_INCLUDE_GENERATED}/config_generated.h)
 # Generated build system internals.
 set(DTS_POST_CPP                ${PROJECT_BINARY_DIR}/zephyr.dts.pre)
 set(DTS_DEPS                    ${PROJECT_BINARY_DIR}/zephyr.dts.d)
-set(CONFIG_POST_CPP             ${PROJECT_BINARY_DIR}/zephyr.settings.pre.yaml)
+set(CONFIG_POST_CPP             ${PROJECT_BINARY_DIR}/zephyr.config.pre.yaml)
+set(CONFIG_DEPS                 ${PROJECT_BINARY_DIR}/zephyr.config.d)
 
 # This generates DT information needed by the Kconfig APIs.
 set(GEN_DRIVER_KCONFIG_SCRIPT   ${DT_SCRIPTS}/gen_driver_kconfig_dts.py)
@@ -126,27 +142,29 @@ set(VENDOR_PREFIXES             dts/bindings/vendor-prefixes.txt)
 
 if(NOT DEFINED SETTINGS_FILES OR SETTINGS_FILES STREQUAL "")
   message(FATAL_ERROR "SETTINGS_FILES must be defined")
-  build_info(devicetree user-files PATH ${DTC_OVERLAY_FILE_AS_LIST})
 endif()
 
-zephyr_list(TRANSFORM SETTINGS_FILES NORMALIZE_PATHS
-            OUTPUT_VARIABLE SETTINGS_FILES_AS_LIST)
-  build_info(devicetree extra-user-files PATH ${EXTRA_DTC_OVERLAY_FILE_AS_LIST})
+zephyr_list(TRANSFORM SETTINGS_FILES NORMALIZE_PATHS OUTPUT_VARIABLE SETTINGS_FILES_AS_LIST)
 
-set(i 0)
 foreach(settings_file IN ITEMS ${SETTINGS_FILES_AS_LIST})
-  if(i EQUAL 0)
-    message(STATUS "Found BOARD.dts: ${settings_file}")
-    list(APPEND DTS_SETTINGS_FILES ${settings_file})
-  elseif(settings_file MATCHES "\.ya?ml$")
-    message(STATUS "Found configuration overlay: ${settings_file}")
+  if(settings_file MATCHES "\.ya?ml$")
+    if(found_root_config)
+      message(STATUS "Found configuration overlay: ${settings_file}")
+    else()
+      message(STATUS "Found ROOT configuration file: ${settings_file}")
+      set(found_root_config TRUE)
+    endif()
     list(APPEND CONFIG_SETTINGS_FILES ${settings_file})
   else()
-    message(STATUS "Found devicetree overlay: ${settings_file}")
+    if(found_board_dts)
+      message(STATUS "Found devicetree overlay: ${settings_file}")
+      list(APPEND DTS_SETTINGS_FILES ${settings_file})
+    else()
+      message(STATUS "Found BOARD.dts: ${settings_file}")
+      set(found_board_dts TRUE)
+    endif()
     list(APPEND DTS_SETTINGS_FILES ${settings_file})
   endif()
-
-  math(EXPR i "${i}+1")
 endforeach()
 
 unset(DTS_ROOT_BINDINGS)
@@ -165,10 +183,23 @@ foreach(dts_root ${DTS_ROOT})
   endif()
 endforeach()
 
+unset(CONFIG_ROOT_BINDINGS)
+foreach(config_root ${CONFIG_ROOT})
+  set(bindings_path ${config_root}/config/bindings)
+  if(EXISTS ${bindings_path})
+    list(APPEND
+      CONFIG_ROOT_BINDINGS
+      ${bindings_path}
+      )
+  endif()
+endforeach()
+
 # Cache the location of the root bindings so they can be used by
 # scripts which use the build directory.
 set(CACHED_DTS_ROOT_BINDINGS ${DTS_ROOT_BINDINGS} CACHE INTERNAL
   "DT bindings root directories")
+set(CACHED_CONFIG_ROOT_BINDINGS ${CONFIG_ROOT_BINDINGS} CACHE INTERNAL
+  "Configuration bindings root directories")
 
 #
 # Run the C preprocessor on the devicetree source, so we can parse it
@@ -180,13 +211,13 @@ set(CACHED_DTS_ROOT_BINDINGS ${DTS_ROOT_BINDINGS} CACHE INTERNAL
 # challenging is this? Can we cache the dts dependencies?
 
 # Run the preprocessor on the DTS input files.
-if(DEFINED CMAKE_DTS_PREPROCESSOR)
-  set(dts_preprocessor ${CMAKE_DTS_PREPROCESSOR})
+if(DEFINED CMAKE_SETTINGS_PREPROCESSOR)
+  set(settings_preprocessor ${CMAKE_SETTINGS_PREPROCESSOR})
 else()
-  set(dts_preprocessor ${CMAKE_C_COMPILER})
+  set(settings_preprocessor ${CMAKE_C_COMPILER})
 endif()
 zephyr_dt_preprocess(
-  CPP ${dts_preprocessor}
+  CPP ${settings_preprocessor}
   SOURCE_FILES ${DTS_SETTINGS_FILES}
   OUT_FILE ${DTS_POST_CPP}
   DEPS_FILE ${DTS_DEPS}
@@ -194,70 +225,81 @@ zephyr_dt_preprocess(
   INCLUDE_DIRECTORIES ${DTS_ROOT_SYSTEM_INCLUDE_DIRS}
   WORKING_DIRECTORY ${APPLICATION_SOURCE_DIR}
   )
-zephyr_dt_preprocess(
-  CPP ${dts_preprocessor}
-  SOURCE_FILES ${CONFIG_SETTINGS_FILES}
-  OUT_FILE ${CONFIG_POST_CPP}
-  DEPS_FILE ${DTS_DEPS}
-  EXTRA_CPPFLAGS ${DTS_EXTRA_CPPFLAGS}
-  INCLUDE_DIRECTORIES ${DTS_ROOT_SYSTEM_INCLUDE_DIRS}
-  WORKING_DIRECTORY ${APPLICATION_SOURCE_DIR}
-  )
+
+if(DEFINED CONFIG_SETTINGS_FILES AND NOT CONFIG_SETTINGS_FILES STREQUAL "")
+  zephyr_dt_preprocess(
+    CPP ${settings_preprocessor}
+    SOURCE_FILES ${CONFIG_SETTINGS_FILES}
+    OUT_FILE ${CONFIG_POST_CPP}
+    DEPS_FILE ${CONFIG_DEPS}
+    EXTRA_CPPFLAGS ${CONFIG_EXTRA_CPPFLAGS}
+    INCLUDE_DIRECTORIES ${CONFIG_ROOT_SYSTEM_INCLUDE_DIRS}
+    WORKING_DIRECTORY ${APPLICATION_SOURCE_DIR}
+    )
+  list(APPEND EXTRA_GEN_EDT_ARGS
+    --config ${CONFIG_POST_CPP}
+    --config-bindings-dirs ${CONFIG_ROOT_BINDINGS}
+    --config-out ${ZEPHYR_CONFIG}.new # for debugging
+    )
+endif()
 
 #
 # Make sure we re-run CMake if any devicetree sources or transitive
 # includes change.
 #
 
-# Parse the generated dependency file to find the DT sources that
-# were included, including any transitive includes.
-toolchain_parse_make_rule(${DTS_DEPS}
-  DTS_INCLUDE_FILES # Output parameter
-  )
+# Parse the generated dependency files to find the DT and configuration sources
+# that were included, including any transitive includes.
+toolchain_parse_make_rule(${DTS_DEPS} DTS_INCLUDE_FILES)
+toolchain_parse_make_rule(${CONFIG_DEPS} CONFIG_INCLUDE_FILES)
 
 # Add the results to the list of files that, when change, force the
 # build system to re-run CMake.
 set_property(DIRECTORY APPEND PROPERTY
   CMAKE_CONFIGURE_DEPENDS
   ${DTS_INCLUDE_FILES}
-  ${GEN_EDT_SCRIPT}
+  ${CONFIG_INCLUDE_FILES}
+  ${GEN_SETTINGS_SCRIPT}
   ${GEN_DEFINES_SCRIPT}
   ${GEN_DRIVER_KCONFIG_SCRIPT}
   ${GEN_DTS_CMAKE_SCRIPT}
   )
 
 #
-# Run GEN_EDT_SCRIPT.
+# Run GEN_SETTINGS_SCRIPT.
 #
 
 string(REPLACE ";" " " EXTRA_DTC_FLAGS_RAW "${EXTRA_DTC_FLAGS}")
-set(CMD_GEN_EDT ${PYTHON_EXECUTABLE} ${GEN_EDT_SCRIPT}
---dts ${DTS_POST_CPP}
---dtc-flags '${EXTRA_DTC_FLAGS_RAW}'
---bindings-dirs ${DTS_ROOT_BINDINGS}
---dts-out ${ZEPHYR_DTS}.new # for debugging and dtc
---edt-pickle-out ${EDT_PICKLE}.new
-${EXTRA_GEN_EDT_ARGS}
-)
+  set(CMD_GEN_SETTINGS ${PYTHON_EXECUTABLE} ${GEN_SETTINGS_SCRIPT}
+  --dts ${DTS_POST_CPP}
+  --dtc-flags '${EXTRA_DTC_FLAGS_RAW}'
+  --dts-bindings-dirs ${DTS_ROOT_BINDINGS}
+  --dts-out ${ZEPHYR_DTS}.new # for debugging and dtc
+  --stree-pickle-out ${STREE_PICKLE}.new
+  ${EXTRA_GEN_EDT_ARGS}
+  )
 
 execute_process(
-  COMMAND ${CMD_GEN_EDT}
+  COMMAND ${CMD_GEN_SETTINGS}
   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
   COMMAND_ERROR_IS_FATAL ANY
   )
 zephyr_file_copy(${ZEPHYR_DTS}.new ${ZEPHYR_DTS} ONLY_IF_DIFFERENT)
-zephyr_file_copy(${EDT_PICKLE}.new ${EDT_PICKLE} ONLY_IF_DIFFERENT)
-file(REMOVE ${ZEPHYR_DTS}.new ${EDT_PICKLE}.new)
+zephyr_file_copy(${ZEPHYR_CONFIG}.new ${ZEPHYR_CONFIG} ONLY_IF_DIFFERENT)
+zephyr_file_copy(${STREE_PICKLE}.new ${STREE_PICKLE} ONLY_IF_DIFFERENT)
+file(REMOVE ${ZEPHYR_DTS}.new ${STREE_PICKLE}.new)
 message(STATUS "Generated zephyr.dts: ${ZEPHYR_DTS}")
-message(STATUS "Generated pickled edt: ${EDT_PICKLE}")
+message(STATUS "Generated zephyr.config.yaml: ${ZEPHYR_CONFIG}")
+message(STATUS "Generated pickled devicetree and configuration tree: ${STREE_PICKLE}")
 
 #
 # Run GEN_DEFINES_SCRIPT.
 #
 
 set(CMD_GEN_DEFINES ${PYTHON_EXECUTABLE} ${GEN_DEFINES_SCRIPT}
---header-out ${DEVICETREE_GENERATED_H}.new
---edt-pickle ${EDT_PICKLE}
+--dt-header-out ${DEVICETREE_GENERATED_H}.new
+--config-header-out ${CONFIG_GENERATED_H}.new
+--stree-pickle ${STREE_PICKLE}
 ${EXTRA_GEN_DEFINES_ARGS}
 )
 
@@ -267,7 +309,8 @@ execute_process(
   COMMAND_ERROR_IS_FATAL ANY
   )
 zephyr_file_copy(${DEVICETREE_GENERATED_H}.new ${DEVICETREE_GENERATED_H} ONLY_IF_DIFFERENT)
-file(REMOVE ${ZEPHYR_DTS}.new ${DEVICETREE_GENERATED_H}.new)
+zephyr_file_copy(${CONFIG_GENERATED_H}.new ${CONFIG_GENERATED_H} ONLY_IF_DIFFERENT)
+file(REMOVE ${ZEPHYR_DTS}.new ${ZEPHYR_CONFIG}.new ${DEVICETREE_GENERATED_H}.new ${CONFIG_GENERATED_H}.new)
 message(STATUS "Generated zephyr.dts: ${ZEPHYR_DTS}")
 message(STATUS "Generated devicetree_generated.h: ${DEVICETREE_GENERATED_H}")
 
@@ -292,7 +335,7 @@ endif()
 
 execute_process(
   COMMAND ${PYTHON_EXECUTABLE} ${GEN_DTS_CMAKE_SCRIPT}
-  --edt-pickle ${EDT_PICKLE}
+  --stree-pickle ${STREE_PICKLE}
   --cmake-out ${DTS_CMAKE}
   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
   RESULT_VARIABLE ret
@@ -361,3 +404,6 @@ endif(DTC)
 build_info(devicetree files PATH ${dts_files})
 build_info(devicetree include-dirs PATH ${DTS_ROOT_SYSTEM_INCLUDE_DIRS})
 build_info(devicetree bindings-dirs PATH ${DTS_ROOT_BINDINGS})
+
+build_info(configuration include-dirs PATH ${CONFIG_ROOT_SYSTEM_INCLUDE_DIRS})
+build_info(configuration bindings-dirs PATH ${CONFIG_ROOT_BINDINGS})

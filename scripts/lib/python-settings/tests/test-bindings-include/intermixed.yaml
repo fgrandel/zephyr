@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 description: Including intermixed file names and maps is valid.
-compatible: intermixed
+schema: intermixed
 include:
   - name: include.yaml
     property-allowlist: [x]

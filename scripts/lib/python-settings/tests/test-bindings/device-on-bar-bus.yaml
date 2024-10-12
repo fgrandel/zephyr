@@ -2,6 +2,6 @@
 
 description: Device on bar bus
 
-compatible: "on-bus"
+schema: "on-bus"
 
 on-bus: "bar"

@@ -5,7 +5,7 @@
  */
 
 /*
- * Used by test_edtlib.py. Dedicated file for testing having multiple binding
+ * Used by test_edtree.py. Dedicated file for testing having multiple binding
  * directories.
  */
 

@@ -4,7 +4,7 @@ description: |
   Includes can be added at any level, so can property-allowlist and
   property-blocklist.
 
-compatible: allow-and-blocklist-multilevel
+schema: allow-and-blocklist-multilevel
 
 include:
   - name: include.yaml

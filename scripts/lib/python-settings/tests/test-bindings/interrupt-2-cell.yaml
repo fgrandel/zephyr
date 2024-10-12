@@ -2,7 +2,7 @@
 
 description: Interrupt controller with two cells
 
-compatible: "interrupt-two-cell"
+schema: "interrupt-two-cell"
 
 interrupt-cells:
   - one

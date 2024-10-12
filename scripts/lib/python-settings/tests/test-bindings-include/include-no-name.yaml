@@ -2,6 +2,6 @@
 
 description: |
   Invalid include element: no name key is present.
-compatible: include-no-name
+schema: include-no-name
 include:
   - property-allowlist: [x]

@@ -2,7 +2,7 @@
 
 description: Property default value test
 
-compatible: "defaults"
+schema: "defaults"
 
 properties:
   int:

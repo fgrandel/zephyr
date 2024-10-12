@@ -2,7 +2,7 @@
 
 description: Property deprecated value test
 
-compatible: "test-deprecated"
+schema: "test-deprecated"
 
 properties:
   oldprop:

@@ -22,8 +22,10 @@ from runners.core import BuildConfiguration
 from zcmake import CMakeCache
 from zephyr_ext_common import Forceable, ZEPHYR_SCRIPTS
 
-# This is needed to load edt.pickle files.
+# This is needed to load stree.pickle files.
 sys.path.insert(0, str(ZEPHYR_SCRIPTS / "lib" / "python-settings" / "src"))
+
+from settings import STree
 
 SIGN_DESCRIPTION = '''\
 This command automates some of the drudgery of creating signed Zephyr
@@ -328,7 +330,7 @@ class ImgtoolSigner(Signer):
 
     @staticmethod
     def edt_flash_node(b, quiet=False):
-        # Get the EDT Node corresponding to the zephyr,flash chosen DT
+        # Get the EDTree node corresponding to the zephyr,flash chosen DT
         # node; 'b' is the build directory as a pathlib object.
 
         # Ensure the build directory has a compiled DTS file
@@ -336,17 +338,18 @@ class ImgtoolSigner(Signer):
         dts = b / 'zephyr' / 'zephyr.dts'
         if not quiet:
             log.dbg('DTS file:', dts, level=log.VERBOSE_VERY)
-        edt_pickle = b / 'zephyr' / 'edt.pickle'
-        if not edt_pickle.is_file():
-            log.die("can't load devicetree; expected to find:", edt_pickle)
+        stree_pickle = b / "zephyr" / "stree.pickle"
+        if not stree_pickle.is_file():
+            log.die("can't load devicetree; expected to find:", stree_pickle)
 
         # Load the devicetree.
-        with open(edt_pickle, 'rb') as f:
-            edt = pickle.load(f)
+        with open(stree_pickle, "rb") as f:
+            stree: STree = pickle.load(f)
+        edtree = stree.edtree
 
         # By convention, the zephyr,flash chosen node contains the
         # partition information about the zephyr image to sign.
-        flash = edt.chosen_node('zephyr,flash')
+        flash = edtree.chosen_node("zephyr,flash")
         if not flash:
             log.die('devicetree has no chosen zephyr,flash node;',
                     "can't infer flash write block or slot0_partition slot sizes")

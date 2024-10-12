@@ -2,7 +2,7 @@
 
 description: GPIO destination for mapping test
 
-compatible: "gpio-dst"
+schema: "gpio-dst"
 
 gpio-cells:
   - val

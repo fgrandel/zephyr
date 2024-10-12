@@ -4,10 +4,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """This file contains a Python script which parses through Zephyr device tree using
-EDT.pickle generated at build and generates a XML file containing USB VIF policies"""
+stree.pickle generated at build and generates a XML file containing USB VIF policies"""
 
 import argparse
-import inspect
 import os
 import pickle
 import sys
@@ -22,6 +21,8 @@ from constants import xml_constants
 SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(SCRIPTS_DIR, "lib", "python-settings", "src"))
 
+from settings import STree
+from settings.devicetree.edtree import _EDTNode
 
 def get_value_attribute(data):
     if not isinstance(data, str):
@@ -215,7 +216,7 @@ def parse_and_add_sink_pdos_to_xml(xml_ele, sink_pdos):
                        get_value_attribute(len(sink_pdos)))
 
 
-def parse_and_add_component_to_xml(xml_ele, node):
+def parse_and_add_component_to_xml(xml_ele, node:_EDTNode):
     add_element_to_xml(xml_ele, vif_element_constants.USB_PD_SUPPORT, None,
                        get_value_attribute(get_xml_bool_value(
                            not node.props[dt_constants.PD_DISABLE].val)))
@@ -245,8 +246,8 @@ def get_source_xml_root(source_xml_file):
 
 def parse_args():
     parser = argparse.ArgumentParser(allow_abbrev=False)
-    parser.add_argument("--edt-pickle", required=True,
-                        help="path to read the pickled edtlib.EDT object from")
+    parser.add_argument("--stree-pickle", required=True,
+                        help="path to read the pickled settings tree object from")
     parser.add_argument("--compatible", required=True,
                         help="device tree compatible to be parsed")
     parser.add_argument("--vif-out", required=True,
@@ -257,19 +258,17 @@ def parse_args():
 
 
 def main():
-    global edtlib
-
     args = parse_args()
-    with open(args.edt_pickle, 'rb') as f:
-        edt = pickle.load(f)
-    edtlib = inspect.getmodule(edt)
+    with open(args.stree_pickle, "rb") as f:
+        stree: STree = pickle.load(f)
+    edtree = stree.edtree
 
     xml_root = get_root()
     source_xml_root = get_source_xml_root(args.vif_source_xml)
     add_elements_to_xml(xml_root, xml_constants.VIF_SPEC_ELEMENTS)
     add_vif_spec_from_source_to_xml(xml_root, source_xml_root)
 
-    for node in edt.compat2nodes[args.compatible]:
+    for node in edtree.compat2nodes[args.compatible]:
         xml_ele = add_element_to_xml(xml_root, vif_element_constants.COMPONENT)
         parse_and_add_component_to_xml(xml_ele, node)
 

@@ -28,11 +28,11 @@ import sys
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
-# This is needed to load edt.pickle files.
+# This is needed to load stree.pickle files.
 sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-settings", "src")
 )
-from devicetree import edtlib  # pylint: disable=unused-import
+from settings import EDTree, STree  # pylint: disable=unused-import
 
 # Prefix used for "struct device" reference initialized based on devicetree
 # entries with a known ordinal.
@@ -220,24 +220,25 @@ class Validator():
     """Validates the initialization priorities.
 
     Scans through a build folder for object files and list all the device
-    initialization priorities. Then compares that against the EDT derived
+    initialization priorities. Then compares that against the EDTree derived
     dependency list and log any found priority issue.
 
     Attributes:
         elf_file_path: path of the ELF file
-        edt_pickle: name of the EDT pickle file
+        stree_pickle: name of the STree pickle file
         log: a logging.Logger object
     """
-    def __init__(self, elf_file_path, edt_pickle, log):
+    def __init__(self, elf_file_path, stree_pickle, log):
         self.log = log
 
-        edt_pickle_path = pathlib.Path(
-                pathlib.Path(elf_file_path).parent,
-                edt_pickle)
-        with open(edt_pickle_path, "rb") as f:
-            edt = pickle.load(f)
+        stree_pickle_path = pathlib.Path(
+            pathlib.Path(elf_file_path).parent, stree_pickle
+        )
+        with open(stree_pickle_path, "rb") as f:
+            stree: STree = pickle.load(f)
+        edtree: EDTree = stree.edtree
 
-        self._ord2node = edt.dep_ord2node
+        self._ord2node = edtree.dep_ord2node
 
         self._obj = ZephyrInitLevels(elf_file_path)
 
@@ -251,9 +252,9 @@ class Validator():
         dev_node = self._ord2node[dev_ord]
         dep_node = self._ord2node[dep_ord]
 
-        if dev_node.matching_compats:
-            self.log.info(f"matching compats: {dev_node.matching_compats}")
-            ignored_compats = set(dev_node.matching_compats) & _IGNORE_COMPATIBLES
+        if dev_node.matching_schemas:
+            self.log.info(f"matching schemas: {dev_node.matching_schemas}")
+            ignored_compats = set(dev_node.matching_schemas) & _IGNORE_COMPATIBLES
             if ignored_compats:
                 self.log.info(f"Ignoring priority: {ignored_compats}")
                 return
@@ -312,9 +313,9 @@ def _parse_args(argv):
                         help="write the output to a file in addition to stdout")
     parser.add_argument("-i", "--initlevels", action="store_true",
                         help="print the initlevel functions instead of checking the device dependencies")
-    parser.add_argument("--edt-pickle", default=pathlib.Path("edt.pickle"),
-                        help="name of the pickled edtlib.EDT file",
-                        type=pathlib.Path)
+    parser.add_argument("--stree-pickle", default=pathlib.Path("stree.pickle"),
+                        help="name of the pickled settings tree file", type=pathlib.Path,
+    )
 
     return parser.parse_args(argv)
 
@@ -347,7 +348,7 @@ def main(argv=None):
 
     log.info(f"check_init_priorities: {args.elf_file}")
 
-    validator = Validator(args.elf_file, args.edt_pickle, log)
+    validator = Validator(args.elf_file, args.stree_pickle, log)
     if args.initlevels:
         validator.print_initlevels()
     else:

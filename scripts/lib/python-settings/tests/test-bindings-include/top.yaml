@@ -12,7 +12,7 @@ description: |
   - "y" was last modified in base.yaml
   - "p" was last modified in top.yaml
 
-compatible: top-level
+schema: top-level
 
 include: modified.yaml
 
