@@ -3,14 +3,14 @@
 
 import contextlib
 import os
+import pytest
 import re
 import tempfile
+
 from copy import deepcopy
 from typing import Optional
 
-import pytest
-
-from devicetree import dtlib
+from settings.devicetree import dtlib
 
 # Test suite for dtlib.py.
 #

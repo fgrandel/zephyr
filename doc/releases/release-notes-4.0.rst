@@ -149,7 +149,7 @@ Build system and Infrastructure
    * ``--dtc-flags``
    * ``--bindings-dirs``
    * ``--dts-out``
-   * ``--edt-pickle-out``
+   * ``--stree-pickle-out``
    * ``--vendor-prefixes``
    * ``--edtlib-Werror``
 

@@ -3,62 +3,43 @@
 # Copyright (c) 2019 - 2020 Nordic Semiconductor ASA
 # Copyright (c) 2019 Linaro Limited
 # Copyright (c) 2024 SILA Embedded Solutions GmbH
+# Copyright (c) 2024, The Zephyr Project
 # SPDX-License-Identifier: Apache-2.0
 
-# This script uses edtlib to generate a pickled edt from a devicetree
-# (.dts) file. Information from binding files in YAML format is used
-# as well.
-#
-# Bindings are files that describe devicetree nodes. Devicetree nodes are
-# usually mapped to bindings via their 'compatible = "..."' property.
-#
-# See Zephyr's Devicetree user guide for details.
-#
-# Note: Do not access private (_-prefixed) identifiers from edtlib here (and
-# also note that edtlib is not meant to expose the dtlib API directly).
-# Instead, think of what API you need, and add it as a public documented API in
-# edtlib. This will keep this script simple.
+# This script uses the settings library to generate a pickled merged settings
+# tree from devicetree (.dts) and configuration tree (.config.yaml) files.
+# Information from binding files in YAML format is used to validate all settings
+# and expose them in a form that can be used to generate C-typed macros.
 
 import argparse
 import os
 import pickle
 import sys
-from typing import NoReturn
 
 sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-settings", "src")
 )
 
-import edtlib_logger
-from devicetree import edtlib
-
+from settings import EDTree, STree, zephyr_build_stree
 
 def main():
     args = parse_args()
 
-    edtlib_logger.setup_edtlib_logging()
-
-    vendor_prefixes = {}
-    for prefixes_file in args.vendor_prefixes:
-        vendor_prefixes.update(edtlib.load_vendor_prefixes_txt(prefixes_file))
-
-    try:
-        edt = edtlib.EDT(args.dts, args.bindings_dirs,
-                         # Suppress this warning if it's suppressed in dtc
-                         warn_reg_unit_address_mismatch=
-                             "-Wno-simple_bus_reg" not in args.dtc_flags,
-                         default_prop_types=True,
-                         infer_binding_for_paths=["/zephyr,user"],
-                         werror=args.edtlib_Werror,
-                         vendor_prefixes=vendor_prefixes)
-    except edtlib.EDTError as e:
-        sys.exit(f"devicetree error: {e}")
+    stree = zephyr_build_stree(
+        bindings_dirs=args.bindings_dirs,
+        dts_path=args.dts,
+        config_path=args.config,
+        vendor_prefix_files=args.vendor_prefixes,
+        strict=args.edtlib_Werror,
+        warn_reg_unit_address_mismatch="-Wno-simple_bus_reg" not in args.dtc_flags,
+    )
 
     # Save merged DTS source, as a debugging aid
     with open(args.dts_out, "w", encoding="utf-8") as f:
-        print(edt.dts_source, file=f)
+        edtree: EDTree = stree.partial_tree_by_source_id("dts")
+        print(edtree.dts_source, file=f)
 
-    write_pickled_edt(edt, args.edt_pickle_out)
+    write_pickled_settings(stree, args.stree_pickle_out)
 
 
 def parse_args() -> argparse.Namespace:
@@ -66,6 +47,7 @@ def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument("--dts", required=True, help="DTS file")
+    parser.add_argument("--config", required=True, help="Config file")
     parser.add_argument("--dtc-flags",
                         help="'dtc' devicetree compiler flags, some of which "
                              "might be respected here")
@@ -75,8 +57,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dts-out", required=True,
                         help="path to write merged DTS source code to (e.g. "
                              "as a debugging aid)")
-    parser.add_argument("--edt-pickle-out",
-                        help="path to write pickled edtlib.EDT object to", required=True)
+    parser.add_argument("--stree-pickle-out",
+                        help="path to write pickled settings.STree to", required=True)
     parser.add_argument("--vendor-prefixes", action='append', default=[],
                         help="vendor-prefixes.txt path; used for validation; "
                              "may be given multiple times")
@@ -88,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def write_pickled_edt(edt: edtlib.EDT, out_file: str) -> None:
+def write_pickled_settings(stree: STree, out_file: str) -> None:
     # Writes the edt object in pickle format to out_file.
 
     with open(out_file, 'wb') as f:
@@ -100,11 +82,7 @@ def write_pickled_edt(edt: edtlib.EDT, out_file: str) -> None:
         #
         # Using a common protocol version here will hopefully avoid
         # reproducibility issues in different Python installations.
-        pickle.dump(edt, f, protocol=4)
-
-
-def err(s: str) -> NoReturn:
-    raise Exception(s)
+        pickle.dump(stree, f, protocol=4)
 
 
 if __name__ == "__main__":

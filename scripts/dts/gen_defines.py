@@ -26,9 +26,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(__file__), "..", "lib", "python-settings", "src")
 )
 
-import edtlib_logger
-from devicetree import edtlib
-from bindings import str_as_token
+from settings import setup_logging, str_as_token
 
 
 def main():
@@ -37,7 +35,7 @@ def main():
 
     args = parse_args()
 
-    edtlib_logger.setup_edtlib_logging()
+    setup_logging()
 
     with open(args.edt_pickle, 'rb') as f:
         edt = pickle.load(f)
@@ -123,8 +121,9 @@ def node_z_path_id(node: edtlib.EDTNode) -> str:
 
     components = ["N"]
     if node.parent is not None:
-        components.extend(f"S_{str2ident(component)}" for component in
-                          node.path.split("/")[1:])
+        components.extend(
+            f"S_{str2ident(component)}" for component in node.path.split("/")[1:]
+        )
 
     return "_".join(components)
 
@@ -157,10 +156,9 @@ Directories with bindings:
 Node dependency ordering (ordinal and path):
 """
 
-    for scc in edt.scc_order:
+    for scc in edt.ordered_scc:
         if len(scc) > 1:
-            err("cycle in devicetree involving "
-                + ", ".join(node.path for node in scc))
+            err("cycle in devicetree involving " + ", ".join(node.path for node in scc))
         s += f"  {scc[0].dep_ordinal:<3} {scc[0].path}\n"
 
     s += """
@@ -187,11 +185,11 @@ Devicetree node: {node.path}
 Node identifier: DT_{node.z_path_id}
 """
 
-    for specificity, compat in enumerate(node.matching_compats):
-        if node.binding_paths[specificity]:
+    for specificity, compat in enumerate(node._matching_compats):
+        if node._binding_paths[specificity]:
             s += f"""
 Binding (compatible = {compat}):
-  {relativize(node.binding_paths[specificity])}
+  {relativize(node._binding_paths[specificity])}
 """
         else:
             s += f"""
@@ -240,8 +238,8 @@ def write_idents_and_existence(node: edtlib.EDTNode) -> None:
     # Aliases
     idents = [f"N_ALIAS_{str2ident(alias)}" for alias in node.aliases]
     # Instances
-    for compat in node.compats:
-        instance_no = node.edt.compat2nodes[compat].index(node)
+    for compat in node._compats:
+        instance_no = node.edtree.compat2nodes[compat].index(node)
         idents.append(f"N_INST_{instance_no}_{str2ident(compat)}")
     # Node labels
     idents.extend(f"N_NODELABEL_{str2ident(label)}" for label in node.labels)
@@ -404,7 +402,7 @@ def write_interrupts(node: edtlib.EDTNode) -> None:
             name = str2ident(cell_name)
 
             if cell_name == "irq":
-                if "arm,gic" in irq.controller.compats:
+                if "arm,gic" in irq.controller._compats:
                     cell_value = map_arm_gic_irq_type(irq, cell_value)
 
             idx_vals.append((f"{path_id}_IRQ_IDX_{i}_EXISTS", 1))
@@ -445,19 +443,23 @@ def write_compatibles(node: edtlib.EDTNode) -> None:
     # about whether edtlib / Zephyr's binding language recognizes
     # them. The compatibles the node provides are what is important.
 
-    for i, compat in enumerate(node.compats):
+    for i, compat in enumerate(node._compats):
         out_dt_define(
             f"{node.z_path_id}_COMPAT_MATCHES_{str2ident(compat)}", 1)
 
-        if node.edt.compat2vendor[compat]:
+        if node.edtree.compat2vendor[compat]:
             out_dt_define(f"{node.z_path_id}_COMPAT_VENDOR_IDX_{i}_EXISTS", 1)
-            out_dt_define(f"{node.z_path_id}_COMPAT_VENDOR_IDX_{i}",
-                          quote_str(node.edt.compat2vendor[compat]))
+            out_dt_define(
+                f"{node.z_path_id}_COMPAT_VENDOR_IDX_{i}",
+                quote_str(node.edtree.compat2vendor[compat]),
+            )
 
-        if node.edt.compat2model[compat]:
+        if node.edtree.compat2model[compat]:
             out_dt_define(f"{node.z_path_id}_COMPAT_MODEL_IDX_{i}_EXISTS", 1)
-            out_dt_define(f"{node.z_path_id}_COMPAT_MODEL_IDX_{i}",
-                          quote_str(node.edt.compat2model[compat]))
+            out_dt_define(
+                f"{node.z_path_id}_COMPAT_MODEL_IDX_{i}",
+                quote_str(node.edtree.compat2model[compat]),
+            )
 
 
 def write_children(node: edtlib.EDTNode) -> None:
@@ -544,7 +546,7 @@ def write_pinctrls(node: edtlib.EDTNode) -> None:
 def write_fixed_partitions(node: edtlib.EDTNode) -> None:
     # Macros for child nodes of each fixed-partitions node.
 
-    if not (node.parent and "fixed-partitions" in node.parent.compats):
+    if not (node.parent and "fixed-partitions" in node.parent._compats):
         return
 
     global flash_area_num
@@ -581,7 +583,7 @@ def write_vanilla_props(node: edtlib.EDTNode) -> None:
     # namespaces. Special cases aren't special enough to break the rules.
 
     macro2val = {}
-    for prop_name, prop in node.props.items():
+    for prop_name, prop in node._props.items():
         prop_id = str2ident(prop_name)
         macro = f"{node.z_path_id}_P_{prop_id}"
         val = prop2value(prop)
@@ -709,7 +711,7 @@ def write_dep_info(node: edtlib.EDTNode) -> None:
                   fmt_dep_list(node.required_by))
 
 
-def prop2value(prop: edtlib.EDTProperty) -> edtlib.PropertyValType:
+def prop2value(prop: edtlib.EDTProperty) -> edtlib.EDTPropertyValType:
     # Gets the macro value for property 'prop', if there is
     # a single well-defined C rvalue that it can be represented as.
     # Returns None if there isn't one.
@@ -866,7 +868,6 @@ def write_global_macros(edt: edtlib.EDT):
     # Global or tree-wide information, such as number of instances
     # with status "okay" for each compatible, is printed here.
 
-
     out_comment("Macros for iterating over all nodes and enabled nodes")
     out_dt_define("FOREACH_HELPER(fn)",
                   " ".join(f"fn(DT_{node.z_path_id})" for node in edt.nodes))
@@ -917,8 +918,8 @@ def write_global_macros(edt: edtlib.EDT):
         for node in nodes:
             if compat == "fixed-partitions":
                 for child in node.children.values():
-                    if "label" in child.props:
-                        label = child.props["label"].val
+                    if "label" in child._props:
+                        label = child._props["label"].val
                         macro = f"COMPAT_{str2ident(compat)}_LABEL_{str2ident(label)}"
                         val = f"DT_{child.z_path_id}"
 

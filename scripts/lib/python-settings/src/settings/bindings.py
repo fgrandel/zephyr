@@ -2,35 +2,23 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Both, devicetree and configuration sources, represent abstract trees of nodes
-with named properties (key/value pairs). The configuration tree may interface to
-the devicetree via references. Both trees combined represent the Zephyr settings
-tree (ST). Properties from the devicetree are called hard(ware) settings while
-properties from the configuration tree are called soft(ware) settings.
-
 Bindings are YAML files that describe setting nodes and their properties. Nodes
-are mapped to bindings via their 'compatible = "..."' (devicetree) or 'schema =
-"..."' (configuration) property. A binding may impose restrictions on the bound
-node as well as on its child nodes via 'child-binding's.
+are mapped to bindings via their 'compatible = "..."' property. A binding may
+impose restrictions on the bound node as well as on its child nodes via
+'child-binding's.
 
 Settings nodes will be validated against bindings and property types (string,
 array, integer, bool, ...). Allowable types and value ranges for properties will
 be derived from the corresponding property definitions in the binding.
 
-The combined information from DTS/configuration and binding sources will be made
-available through STNode (settings tree node) instances that together represent
-the STree (settings tree).
-
-An STNode from the devicetree (DTNode) represents hardware settings while an
-STNode from a configuration source (ConfigNode) contains software settings.
-
-The STree will be normalized in the sense that properties belonging to the same
-conceptual entity (i.e. functionally depending on the same entity ID or "key")
-will be kept in the same STNode.
+TODO: Move all references to buses into a child class in edtlib.py.
 """
 
+import os
+import re
+import yaml
+
 from copy import deepcopy
-from dataclasses import dataclass
 from typing import (
     Any,
     Dict,
@@ -38,26 +26,25 @@ from typing import (
     NoReturn,
     Optional,
     Union,
-    TypeVar,
-    Generic,
     TYPE_CHECKING,
 )
-import os
-import re
 
-import yaml
-try:
-    # Use the C LibYAML parser if available, rather than the Python parser.
-    # This makes e.g. gen_defines.py more than twice as fast.
-    from yaml import CLoader as Loader
-except ImportError:
-    from yaml import Loader  # type: ignore
+from settings.error import STBindingError
+from settings.yamlutil import _IncludeLoader
+
+#
+# Private constants
+#
+
+# Regular expression for non-alphanumeric-or-underscore characters.
+_NOT_ALPHANUM_OR_UNDERSCORE = re.compile(r"\W", re.ASCII)
 
 #
 # Public classes
 #
 
-class Binding:
+
+class _STBinding:
     """
     Represents a parsed binding.
 
@@ -126,12 +113,12 @@ class Binding:
     def __init__(
         self,
         path: Optional[str],
-        fname2path: Dict[str, str],
+        fname2path: dict[str, str],
         raw: Any = None,
         require_compatible: bool = True,
         require_description: bool = True,
-        inc_allowlist: Optional[List[str]] = None,
-        inc_blocklist: Optional[List[str]] = None,
+        inc_allowlist: Optional[list[str]] = None,
+        inc_blocklist: Optional[list[str]] = None,
     ):
         """
         Binding constructor.
@@ -177,7 +164,7 @@ class Binding:
             if path is None:
                 _err("you must provide either a 'path' or a 'raw' argument")
             with open(path, encoding="utf-8") as f:
-                raw = yaml.load(f, Loader=_BindingLoader)
+                raw = yaml.load(f, Loader=_IncludeLoader)
 
         # Get the properties this binding modifies
         # before we merge the included ones.
@@ -188,7 +175,7 @@ class Binding:
         #   the properties specified by the included bindings
         # - eventually, we'll update prop2specs with the properties
         #   this binding itself defines or modifies
-        self.prop2specs: Dict[str, "PropertySpec"] = {}
+        self.prop2specs: Dict[str, "_STPropertySpec"] = {}
 
         # Merge any included files into self.raw. This also pulls in
         # inherited child binding definitions, so it has to be done
@@ -204,7 +191,7 @@ class Binding:
                     f"malformed 'child-binding:' in {self.path}, "
                     "expected a binding (dictionary with keys/values)"
                 )
-            self.child_binding: Optional["Binding"] = Binding(
+            self.child_binding: Optional["_STBinding"] = _STBinding(
                 path,
                 fname2path,
                 raw=raw["child-binding"],
@@ -219,7 +206,7 @@ class Binding:
 
         # Update specs with the properties this binding defines or modifies.
         for prop_name in last_modified_props:
-            self.prop2specs[prop_name] = PropertySpec(prop_name, self)
+            self.prop2specs[prop_name] = _STPropertySpec(prop_name, self)
 
         # Initialize look up tables.
         self.specifier2cells: Dict[str, List[str]] = {}
@@ -380,7 +367,7 @@ class Binding:
             _err(f"'{fname}' not found")
 
         with open(path, encoding="utf-8") as f:
-            contents = yaml.load(f, Loader=_BindingLoader)
+            contents = yaml.load(f, Loader=_IncludeLoader)
             if not isinstance(contents, dict):
                 _err(f"{path}: invalid contents, expected a mapping")
 
@@ -420,7 +407,7 @@ class Binding:
         # as a same YAML file may be included with different filters
         # (property-allowlist and such), leading to different contents.
 
-        inc_binding = Binding(
+        inc_binding = _STBinding(
             self._fname2path[fname],
             self._fname2path,
             contents,
@@ -577,8 +564,16 @@ class Binding:
             if "enum" in options and not isinstance(options["enum"], list):
                 _err(f"enum in {self.path} for property '{prop_name}' " "is not a list")
 
+    def __hash__(self):
+        return hash((self.compatible, self.on_bus))
 
-class PropertySpec:
+    def __eq__(self, other):
+        if not isinstance(other, _STBinding):
+            return False
+        return (self.compatible, self.on_bus) == (other.compatible, other.on_bus)
+
+
+class _STPropertySpec:
     """
     Represents a "property specification", i.e. the description of a
     property provided by a binding file, like its type and description.
@@ -634,8 +629,8 @@ class PropertySpec:
       The specifier space for the property as given in the binding, or None.
     """
 
-    def __init__(self, name: str, binding: Binding):
-        self.binding: Binding = binding
+    def __init__(self, name: str, binding: _STBinding):
+        self.binding: _STBinding = binding
         self.name: str = name
         self._raw: Dict[str, Any] = self.binding.raw["properties"][name]
 
@@ -719,91 +714,6 @@ class PropertySpec:
         return self._raw.get("specifier-space")
 
 
-V = TypeVar("V")
-N = TypeVar("N")
-
-
-@dataclass
-class Property(Generic[V, N]):
-    """
-    Represents a property on a Node, as set in its ST node and with
-    additional info from the 'properties:' section of the binding.
-
-    Only properties mentioned in 'properties:' get created. Properties of type
-    'compound' currently do not get Property instances, as it's not clear
-    what to generate for them.
-
-    These attributes are available on Property objects. Several are
-    just convenience accessors for attributes on the PropertySpec object
-    accessible via the 'spec' attribute:
-
-    spec:
-      The PropertySpec object which specifies this property.
-
-    val:
-      The value of the property, with the format determined by spec.type, which
-      comes from the 'type:' string in the binding. See subclasses for specific
-      conversion rules.
-
-    node:
-      The Node instance the property is on
-
-    name:
-      Convenience for spec.name.
-
-    description:
-      Convenience for spec.description with leading and trailing whitespace
-      (including newlines) removed. May be None.
-
-    type:
-      Convenience for spec.type.
-
-    val_as_token:
-      The value of the property as a token, i.e. with non-alphanumeric
-      characters replaced with underscores. This is only safe to access
-      if 'spec.enum_tokenizable' returns True.
-
-    enum_index:
-      The index of 'val' in 'spec.enum' (which comes from the 'enum:' list
-      in the binding), or None if spec.enum is None.
-    """
-
-    spec: PropertySpec
-    val: V
-    node: N
-
-    @property
-    def name(self) -> str:
-        "See the class docstring"
-        return self.spec.name
-
-    @property
-    def description(self) -> Optional[str]:
-        "See the class docstring"
-        return self.spec.description.strip() if self.spec.description else None
-
-    @property
-    def type(self) -> str:
-        "See the class docstring"
-        return self.spec.type
-
-    @property
-    def val_as_token(self) -> str:
-        "See the class docstring"
-        assert isinstance(self.val, str)
-        return str_as_token(self.val)
-
-    @property
-    def enum_index(self) -> Optional[int]:
-        "See the class docstring"
-        enum = self.spec.enum
-        return enum.index(self.val) if enum else None
-
-
-class BindingError(Exception):
-    "Exception raised for binding-related errors"
-
-
 #
 # Public global functions
 #
@@ -811,11 +721,11 @@ class BindingError(Exception):
 
 def bindings_from_paths(
     yaml_paths: List[str], ignore_errors: bool = False
-) -> List[Binding]:
+) -> List[_STBinding]:
     """
     Get a list of Binding objects from the yaml files 'yaml_paths'.
 
-    If 'ignore_errors' is True, YAML files that cause an BindingError when
+    If 'ignore_errors' is True, YAML files that cause an STBindingError when
     loaded are ignored. (No other exception types are silenced.)
     """
 
@@ -823,8 +733,8 @@ def bindings_from_paths(
     fname2path = {os.path.basename(path): path for path in yaml_paths}
     for path in yaml_paths:
         try:
-            ret.append(Binding(path, fname2path))
-        except BindingError:
+            ret.append(_STBinding(path, fname2path))
+        except STBindingError:
             if ignore_errors:
                 continue
             raise
@@ -835,6 +745,7 @@ def bindings_from_paths(
 #
 # Private global functions
 #
+
 
 def _check_prop_by_type(
     prop_name: str, options: dict, binding_path: Optional[str]
@@ -1136,49 +1047,5 @@ def _bad_overwrite(
     return True
 
 
-def _binding_inc_error(msg):
-    # Helper for reporting errors in the !include implementation
-
-    raise yaml.constructor.ConstructorError(None, None, "error: " + msg)
-
-
-def _binding_include(loader, node):
-    # Implements !include, for backwards compatibility. '!include [foo, bar]'
-    # just becomes [foo, bar].
-
-    if isinstance(node, yaml.ScalarNode):
-        # !include foo.yaml
-        return [loader.construct_scalar(node)]
-
-    if isinstance(node, yaml.SequenceNode):
-        # !include [foo.yaml, bar.yaml]
-        return loader.construct_sequence(node)
-
-    _binding_inc_error("unrecognised node type in !include statement")
-
-
-# Regular expression for non-alphanumeric-or-underscore characters.
-_NOT_ALPHANUM_OR_UNDERSCORE = re.compile(r"\W", re.ASCII)
-
-
-def str_as_token(val: str) -> str:
-    """Return a canonical representation of a string as a C token.
-
-    This converts special characters in 'val' to underscores, and
-    returns the result."""
-
-    return re.sub(_NOT_ALPHANUM_OR_UNDERSCORE, "_", val)
-
-
 def _err(msg) -> NoReturn:
-    raise BindingError(msg)
-
-
-# Custom PyYAML binding loader class to avoid modifying yaml.Loader directly,
-# which could interfere with YAML loading in clients
-class _BindingLoader(Loader):
-    pass
-
-
-# Add legacy '!include foo.yaml' handling
-_BindingLoader.add_constructor("!include", _binding_include)
+    raise STBindingError(msg)

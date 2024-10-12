@@ -233,10 +233,11 @@ set_property(DIRECTORY APPEND PROPERTY
 string(REPLACE ";" " " EXTRA_DTC_FLAGS_RAW "${EXTRA_DTC_FLAGS}")
 set(CMD_GEN_EDT ${PYTHON_EXECUTABLE} ${GEN_EDT_SCRIPT}
 --dts ${DTS_POST_CPP}
+--config ${CONFIG_POST_CPP}
 --dtc-flags '${EXTRA_DTC_FLAGS_RAW}'
 --bindings-dirs ${DTS_ROOT_BINDINGS}
 --dts-out ${ZEPHYR_DTS}.new # for debugging and dtc
---edt-pickle-out ${EDT_PICKLE}.new
+--stree-pickle-out ${EDT_PICKLE}.new
 ${EXTRA_GEN_EDT_ARGS}
 )
 

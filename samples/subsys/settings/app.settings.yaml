@@ -3,7 +3,7 @@
 # Sample NVS settings provisioning configuration.
 
 alpha:
-  schema: zephyr,sample-settings
+  compatible: zephyr,sample-settings
 
   angle:
     1: 90

@@ -29,11 +29,12 @@ from ctypes import Structure, sizeof, c_uint8, c_uint16
 from elf_parser import ZephyrElf, Device
 from enum import IntEnum
 from dataclasses import dataclass, field
-from devicetree.edtlib import EDT, EDTNode, EDTProperty
+from devicetree.edtlib import EDT
 from functools import cached_property
 from intelhex import IntelHex
 from math import floor
 from pathlib import Path
+from stree import STPartialTreeNode, STProperty
 from textwrap import dedent
 from typing import Final, Optional, Iterator
 
@@ -512,10 +513,10 @@ class SettingsNvs:
 
         flash_controller = settings_partition.flash_controller
         assert flash_controller
-        erase_value = flash_controller.props.get("erase-value")
+        erase_value = flash_controller._props.get("erase-value")
 
         flash_layout = settings_partition.parent.parent
-        if not (flash_layout and "soc-nv-flash" in flash_layout.compats):
+        if not (flash_layout and "soc-nv-flash" in flash_layout._compats):
             raise ValueError(
                 "Only SoC nonvolatile flash ('soc-nv-flash') partitions are currently supported"
             )
@@ -523,11 +524,11 @@ class SettingsNvs:
         # TODO: This is currently a workaround to get the sector size. It should be
         # correct in most cases, but in principle it may be different from the
         # sector size returned by the driver's `api->page_layout()` call.
-        sector_size = flash_layout.props.get("erase-block-size")
+        sector_size = flash_layout._props.get("erase-block-size")
         if not sector_size:
             raise ValueError("Erase block size not found in 'soc-nv-flash' node.")
 
-        write_block_size = flash_layout.props.get("write-block-size")
+        write_block_size = flash_layout._props.get("write-block-size")
         if not write_block_size:
             raise ValueError("Write block size not found in 'soc-nv-flash' node.")
 
@@ -587,7 +588,9 @@ class SettingsNvs:
         return bytes(self.nvs_fs.flash_partition.data)
 
 
-def config_subtree_nodes(edt: EDT, subtree: str | EDTNode) -> Iterator[EDTNode]:
+def config_subtree_nodes(
+    edt: EDT, subtree: str | STPartialTreeNode
+) -> Iterator[STPartialTreeNode]:
     """
     A depth-first iterator of all subnodes of the given configuration path or
     node (including the given node itself).
@@ -605,7 +608,7 @@ def config_subtree_nodes(edt: EDT, subtree: str | EDTNode) -> Iterator[EDTNode]:
     else:
         node = subtree
 
-    if not isinstance(node, EDTNode):
+    if not isinstance(node, STPartialTreeNode):
         raise ValueError(f"Invalid node reference: {subtree}.")
 
     yield node
@@ -616,7 +619,9 @@ def config_subtree_nodes(edt: EDT, subtree: str | EDTNode) -> Iterator[EDTNode]:
 
 
 def config_convert_phandles(
-    phandles: EDTNode | list[EDTNode], prop_type: str, devices_by_ord: dict[int, Device]
+    phandles: STPartialTreeNode | list[STPartialTreeNode],
+    prop_type: str,
+    devices_by_ord: dict[int, Device],
 ):
     phandles = phandles if isinstance(phandles, list) else [phandles]
 
@@ -663,8 +668,8 @@ def min_bytes(val: int) -> int:
 
 
 def config_prepare_property(
-    prop: EDTProperty,
-    root_node: EDTNode,
+    prop: STProperty,
+    root_node: STPartialTreeNode,
     prefix: Optional[str],
     devices_by_ord: dict[int, Device],
     verbose: bool = False,
@@ -744,7 +749,7 @@ def main():
             if not root_node:
                 root_node = node
 
-            for prop in node.props.values():
+            for prop in node._props.values():
                 if prop.name in cfg.filtered_props:
                     continue
 
