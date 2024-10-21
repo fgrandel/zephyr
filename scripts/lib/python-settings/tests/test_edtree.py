@@ -5,6 +5,7 @@ from collections import OrderedDict
 import contextlib
 import io
 import os
+import pickle
 import pytest
 
 from logging import WARNING
@@ -1228,3 +1229,11 @@ def verify_phandle_array_prop(node: _EDTNode, name, values):
             assert actual.data == data
         else:
             assert actual is None
+
+
+def test_stree_pickle():
+    with from_here():
+        stree = STree().add_partial_tree(EDTree("test.dts", "test-bindings")).process()
+        pickle.loads(pickle.dumps(stree))  # Make sure it's pickleable
+        stree_copy = deepcopy(stree)
+        pickle.loads(pickle.dumps(stree_copy))  # Make sure it's pickleable

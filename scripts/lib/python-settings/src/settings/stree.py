@@ -62,6 +62,8 @@ if TYPE_CHECKING:
     # Avoid circular imports.
     from settings.devicetree.edtree import EDTree
     from settings.configuration.configtree import ConfigTree
+
+
 #
 # Private types
 #
